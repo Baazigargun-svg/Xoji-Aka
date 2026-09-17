@@ -2,7 +2,7 @@ import sqlite3
 import telebot
 import os
 import threading
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request
 from telebot import types
 from datetime import datetime
 from openpyxl import Workbook
@@ -25,6 +25,7 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS shops (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, agent_name TEXT, total_sum REAL, items_text TEXT, price_type TEXT, status TEXT DEFAULT 'Yangi', date TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS incomes (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, amount REAL, date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, reason TEXT, amount REAL, date TEXT)''')
     
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN chakana_price REAL;")
@@ -569,88 +570,86 @@ def web_index():
     if filter_date:
         cursor.execute("SELECT id, shop_name, agent_name, total_sum, status, date FROM orders WHERE date LIKE ? ORDER BY id DESC", (f"{filter_date}%",))
     else:
-        cursor.execute("SELECT id, shop_name, agent_name, total_sum, status, date FROM orders ORDER BY id DESC LIMIT 20")
-        
+        cursor.execute("SELECT id, shop_name, agent_name, total_sum, status, date FROM orders ORDER BY id DESC")
     orders = cursor.fetchall()
+    
+    cursor.execute("SELECT SUM(debt) FROM shops")
+    total_debt = cursor.fetchone()[0] or 0
+    
+    cursor.execute("SELECT SUM(amount) FROM incomes")
+    total_income = cursor.fetchone()[0] or 0
+    
+    cursor.execute("SELECT SUM(amount) FROM expenses")
+    total_expense = cursor.fetchone()[0] or 0
+    
+    kassa_balance = total_income - total_expense
     conn.close()
     
-    html_template = """
+    WEB_HTML = """
     <!DOCTYPE html>
     <html lang="uz">
     <head>
         <meta charset="UTF-8">
-        <title>Xoji Aka Factory - Dashboard</title>
-        <style>
-            body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; }
-            h1, h2 { color: #333; }
-            .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 30px; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-            th { background-color: #1F497D; color: white; }
-            tr:nth-child(even) { background-color: #f9f9f9; }
-        </style>
+        <title>Xoji Aka ERP — Web Panel</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     </head>
-    <body>
-        <div class="container">
-            <h1>🏭 Xoji Aka Factory - Boshqaruv Paneli</h1>
+    <body class="bg-light">
+        <div class="container py-4">
+            <h2 class="mb-4 text-primary fw-bold">🏭 Xoji Aka ERP Boshqaruv Paneli</h2>
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="p-3 bg-white shadow-sm rounded border">
+                        <small class="text-muted">Kassadagi Naqd Pul</small>
+                        <h4 class="fw-bold text-success">{{ "{:,.0f}".format(kassa_balance) }} so'm</h4>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 bg-white shadow-sm rounded border">
+                        <small class="text-muted">Umumiy Nasiya (Qarz)</small>
+                        <h4 class="fw-bold text-danger">{{ "{:,.0f}".format(total_debt) }} so'm</h4>
+                    </div>
+                </div>
+            </div>
             
-            <h2>📦 Mahsulotlar va Sklad</h2>
-            <table>
-                <tr><th>ID</th><th>Nomi</th><th>Optom Narx</th><th>Chakana Narx</th><th>Qoldiq</th></tr>
-                {% for p in products %}
-                <tr>
-                    <td>{{ p[0] }}</td>
-                    <td>{{ p[1] }}</td>
-                    <td>{{ "{:,.0f}".format(p[2]) if p[2] is not none else "0" }} so'm</td>
-                    <td>{{ "{:,.0f}".format(p[3]) if p[3] is not none else "0" }} so'm</td>
-                    <td>{{ p[4] if p[4] is not none else "0" }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-
-            <h2>🏪 Do'konlar va Qarzlar (AKB)</h2>
-            <table>
-                <tr><th>ID</th><th>Nomi</th><th>Telefon</th><th>Qarzi</th></tr>
-                {% for s in shops %}
-                <tr>
-                    <td>{{ s[0] }}</td>
-                    <td>{{ s[1] }}</td>
-                    <td>{{ s[2] }}</td>
-                    <td>{{ "{:,.0f}".format(s[3]) if s[3] is not none else "0" }} so'm</td>
-                </tr>
-                {% endfor %}
-            </table>
-
-            <h2>📜 So'nggi Buyurtmalar</h2>
-            <table>
-                <tr><th>ID</th><th>Do'kon</th><th>Agent</th><th>Summa</th><th>Status</th><th>Sana</th></tr>
-                {% for o in orders %}
-                <tr>
-                    <td>#{{ o[0] }}</td>
-                    <td>{{ o[1] }}</td>
-                    <td>{{ o[2] }}</td>
-                    <td>{{ "{:,.0f}".format(o[3]) if o[3] is not none else "0" }} so'm</td>
-                    <td><b>{{ o[4] }}</b></td>
-                    <td>{{ o[5] }}</td>
-                </tr>
-                {% endfor %}
-            </table>
+            <div class="bg-white p-4 shadow-sm rounded border mb-4">
+                <h5 class="fw-bold mb-3">Buyurtmalar ro'yxati</h5>
+                <table class="table table-striped">
+                    <thead>
+                        <tr><th>ID</th><th>Do'kon</th><th>Agent</th><th>Summa</th><th>Status</th><th>Sana</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        <tr>
+                            <td>#{{ o[0] }}</td>
+                            <td>{{ o[1] }}</td>
+                            <td>{{ o[2] }}</td>
+                            <td>{{ "{:,.0f}".format(o[3]) }} so'm</td>
+                            <td><span class="badge bg-secondary">{{ o[4] }}</span></td>
+                            <td>{{ o[5] }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-center text-muted">Buyurtmalar yo'q</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </body>
     </html>
     """
-    return render_template_string(html_template, products=products, shops=shops, orders=orders)
+    return render_template_string(WEB_HTML, orders=orders, products=products, shops=shops, total_debt=total_debt, kassa_balance=kassa_balance)
 
-def run_flask():
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+def run_bot():
+    bot.infinity_polling(skip_pending=True)
 
 if __name__ == '__main__':
     init_db()
     auto_insert_products()
     
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
+    # Telegram botni fonda ishga tushirish
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     
-    print("Xoji aka tizimi (Bot + Web) ishga tushdi...")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    # Render.com beradigan portga moslab ishga tushirish
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
