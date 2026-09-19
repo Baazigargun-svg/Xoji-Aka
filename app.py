@@ -72,10 +72,9 @@ def init_web_db():
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS shops 
-                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT)'''
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '')'''
   )
 
-  # Ustunlar mavjudligini tekshirib qo'shish
   migrations = [
       (
           "ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Boshqa'",
@@ -92,6 +91,9 @@ def init_web_db():
       ),
       ("ALTER TABLE products ADD COLUMN stock REAL DEFAULT 0", "stock"),
       ("ALTER TABLE shops ADD COLUMN visit_days TEXT DEFAULT ''", "visit_days"),
+      ("ALTER TABLE shops ADD COLUMN region TEXT DEFAULT ''", "region"),
+      ("ALTER TABLE shops ADD COLUMN landmark TEXT DEFAULT ''", "landmark"),
+      ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
       ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
       ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
   ]
@@ -102,7 +104,6 @@ def init_web_db():
     except:
       pass
 
-  # Adminni bazaga qo'shish
   cursor.execute(
       "INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?,"
       " 'Admin', '', 'admin')",
@@ -486,19 +487,16 @@ def admin_other_sections(message):
     )
 
   elif message.text == "🏪 AKB (Do'konlar & Qarz)":
-    shops = conn.execute('SELECT name, phone, debt FROM shops').fetchall()
+    shops = conn.execute(
+        'SELECT name, phone, debt, region FROM shops'
+    ).fetchall()
     text = "<b>🏪 Do'konlar qarzlari:</b>\n\n"
     for s in shops:
       debt_val = s['debt'] if s['debt'] is not None else 0
-      text += f"🏢 {s['name']} ({s['phone']}) — Qarz: {debt_val:,.0f} so'm\n"
-    inline_kb = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton(
-            "➕ Do'kon Qo'shish", callback_data='admin_add_shop'
-        )
-    )
-    bot.send_message(
-        message.chat.id, text, parse_mode='HTML', reply_markup=inline_kb
-    )
+      text += (
+          f"🏢 {s['name']} ({s['region']}) — Qarz: {debt_val:,.0f} so'm\n"
+      )
+    bot.send_message(message.chat.id, text, parse_mode='HTML')
 
   elif message.text == '👥 Agentlar boshqaruvi':
     agents = conn.execute(
@@ -571,40 +569,111 @@ def change_status_logic(call):
   )
 
 
-@bot.callback_query_handler(func=lambda call: call.data == 'admin_add_shop')
-def admin_inline_clicks(call):
-  msg = bot.send_message(call.message.chat.id, "🏢 Do'kon NOMINI kiriting:")
-  bot.register_next_step_handler(msg, process_shop_name_step)
-
-
-@bot.message_handler(func=lambda message: message.text == "🏪 Do'kon qo'shish (AKB)")
-def agent_add_shop_menu(message):
-  msg = bot.send_message(message.chat.id, "🏢 Do'kon NOMINI kiriting:")
-  bot.register_next_step_handler(msg, process_shop_name_step)
-
-
-def process_shop_name_step(message):
-  shop_name = message.text
-  msg = bot.send_message(
-      message.chat.id, f"📞 '{shop_name}' uchun TELEFON RAQAM:"
+@app.route('/add_shop', methods=['POST'])
+def add_shop():
+  name, phone, visit_days, region, landmark, inventory = (
+      request.form['name'],
+      request.form['phone'],
+      request.form.get('visit_days', ''),
+      request.form.get('region', ''),
+      request.form.get('landmark', ''),
+      request.form.get('inventory', ''),
   )
-  bot.register_next_step_handler(msg, process_shop_phone_final, shop_name)
-
-
-def process_shop_phone_final(message, shop_name):
-  phone = message.text
   conn = get_db_connection()
   try:
     conn.execute(
-        'INSERT INTO shops (name, phone, debt) VALUES (?, ?, 0)',
-        (shop_name, phone),
+        'INSERT INTO shops (name, phone, debt, visit_days, region, landmark,'
+        ' inventory) VALUES (?, ?, 0, ?, ?, ?, ?)',
+        (name, phone, visit_days, region, landmark, inventory),
     )
     conn.commit()
-    bot.send_message(message.chat.id, f'✅ Do\'kon saqlandi: {shop_name}')
   except:
-    bot.send_message(message.chat.id, '❌ Bu do\'kon allaqachon mavjud.')
-  finally:
+    pass
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/update_shop/<int:shop_id>', methods=['POST'])
+def update_shop(shop_id):
+  name = request.form['name']
+  phone = request.form['phone']
+  region = request.form.get('region', '')
+  landmark = request.form.get('landmark', '')
+  visit_days = request.form.get('visit_days', '')
+  inventory = request.form.get('inventory', '')
+
+  conn = get_db_connection()
+  try:
+    conn.execute(
+        'UPDATE shops SET name = ?, phone = ?, region = ?, landmark = ?,'
+        ' visit_days = ?, inventory = ? WHERE id = ?',
+        (name, phone, region, landmark, visit_days, inventory, shop_id),
+    )
+    conn.commit()
+  except Exception as e:
+    print(e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/import_shops_excel', methods=['POST'])
+def import_shops_excel():
+  if 'excel_file' not in request.files:
+    return redirect(url_for('operator_dashboard'))
+  file = request.files['excel_file']
+  if file.filename == '':
+    return redirect(url_for('operator_dashboard'))
+
+  try:
+    df = pd.read_excel(file)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    for _, row in df.iterrows():
+      # Ustun nomlarini moslashtirish (exceldagiga qarab)
+      name = str(row.get('name', row.get("Do'kon nomi", ''))).strip()
+      if not name or name == 'nan':
+        continue
+      phone = str(row.get('phone', row.get('Telefon', ''))).strip()
+      region = str(row.get('region', row.get('Hudud', ''))).strip()
+      landmark = str(row.get('landmark', row.get('Orienter', ''))).strip()
+      visit_days = str(
+          row.get('visit_days', row.get('Tashrif kunlari', ''))
+      ).strip()
+      inventory = str(row.get('inventory', row.get('Inventar', ''))).strip()
+
+      debt_val = 0
+      try:
+        debt_val = float(
+            row.get('debt', row.get('Qarz', 0)) or 0
+        )
+      except:
+        pass
+
+      # Bazaga kiritish (agar mavjud bo'lsa yangilash yoki o'tkazib yuborish)
+      cursor.execute(
+          '''INSERT INTO shops (name, phone, debt, visit_days, region, landmark, inventory) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(name) DO UPDATE SET 
+                       phone=excluded.phone, region=excluded.region, landmark=excluded.landmark, 
+                       visit_days=excluded.visit_days, inventory=excluded.inventory''',
+          (
+              name,
+              phone,
+              debt_val,
+              visit_days,
+              region if region != 'nan' else '',
+              landmark if landmark != 'nan' else '',
+              inventory if inventory != 'nan' else '',
+          ),
+      )
+
+    conn.commit()
     conn.close()
+  except Exception as e:
+    print('Excel import xatosi:', e)
+
+  return redirect(url_for('operator_dashboard'))
 
 
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
@@ -871,7 +940,7 @@ def ask_payment_amount(message):
   shop_name = message.text
   msg = bot.send_message(
       message.chat.id,
-      f"'{shop_name}' qancha to'lov qildi (summa):",
+      f"'{shop_name}' qancha to'lov kirdi (summa):",
       reply_markup=types.ReplyKeyboardRemove(),
   )
   bot.register_next_step_handler(msg, process_payment, shop_name)
@@ -943,6 +1012,8 @@ HTML_TEMPLATE = """
         .table-custom td { font-size: 13px; vertical-align: middle; }
         .day-badge { display: inline-block; padding: 5px 8px; margin: 2px; border-radius: 6px; font-size: 11px; font-weight: bold; background: #e2e8f0; color: #475569; cursor: pointer; border: 1px solid #cbd5e1; user-select: none; }
         .day-badge.selected { background: #3b82f6; color: white; border-color: #2563eb; }
+        .shop-row { cursor: pointer; }
+        .shop-row:hover { background-color: #f1f5f9 !important; }
     </style>
 </head>
 <body>
@@ -1038,7 +1109,7 @@ HTML_TEMPLATE = """
                                         <label class="form-label small fw-bold">Do'kon:</label>
                                         <select name="shop_name" class="form-select" required>
                                             <option value="">-- Do'konni tanlang --</option>
-                                            {% for s in shops %}<option value="{{ s['name'] }}">{{ s['name'] }}</option>{% endfor %}
+                                            {% for s in shops %}<option value="{{ s['name'] }}">{{ s['name'] }} ({{ s['region'] }})</option>{% endfor %}
                                         </select>
                                     </div>
                                     <div class="mb-3">
@@ -1178,13 +1249,28 @@ HTML_TEMPLATE = """
                 </div>
                 <!-- DO'KONLAR -->
                 <div class="tab-pane fade" id="tab-clients">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-12">
+                            <div class="card-glass p-3 bg-light border">
+                                <h6 class="fw-bold mb-2"><i class="bi bi-file-earmark-excel text-success me-2"></i>Exceldan Do'konlar Bazasini Yuklash (Import)</h6>
+                                <form action="/import_shops_excel" method="POST" enctype="multipart/form-data" class="d-flex align-items-center gap-3">
+                                    <input type="file" name="excel_file" class="form-control form-control-sm" accept=".xlsx, .xls" required style="max-width: 350px;">
+                                    <button type="submit" class="btn btn-sm btn-success fw-bold text-nowrap"><i class="bi bi-upload me-1"></i>Excelni Yuklash</button>
+                                    <small class="text-muted">(Excel ustun nomlari: <b>Do'kon nomi</b> (yoki name), <b>Telefon</b>, <b>Hudud</b>, <b>Orienter</b>, <b>Qarz</b>)</small>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
                     <div class="row g-4">
                         <div class="col-md-4">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-shop-window me-2 text-success"></i>Yangi Do'kon</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-shop-window me-2 text-success"></i>Yangi Do'kon Qo'shish</h5>
                                 <form action="/add_shop" method="POST">
                                     <div class="mb-3"><label class="form-label small fw-bold">Nomi:</label><input type="text" name="name" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" class="form-control" required></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar (Sovutgich, stelaj):</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
                                     <div class="mb-3">
                                         <label class="form-label small fw-bold">Tashrif kunlari:</label>
                                         <div class="d-flex flex-wrap gap-1">
@@ -1204,27 +1290,30 @@ HTML_TEMPLATE = """
                         </div>
                         <div class="col-md-8">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-people me-2"></i>Do'konlar & Qarzni To'lash</h5>
-                                <table class="table table-custom table-hover" id="shopsTable">
-                                    <thead><tr><th>Do'kon</th><th>Tel</th><th>Tashrif kuni</th><th>Qarzdorlik</th><th>To'lov</th></tr></thead>
-                                    <tbody>
-                                        {% for s in shops %}
-                                        <tr>
-                                            <td><b>{{ s['name'] }}</b></td>
-                                            <td>{{ s['phone'] }}</td>
-                                            <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
-                                            <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
-                                            <td>
-                                                <form action="/pay_debt" method="POST" class="d-flex gap-1">
-                                                    <input type="hidden" name="shop_id" value="{{ s['id'] }}">
-                                                    <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 100px;">
-                                                    <button type="submit" class="btn btn-sm btn-success">Prixod</button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-people me-2"></i>Do'konlar Ro'yxati (Tahrirlash uchun ustiga bosing)</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-custom table-hover align-middle" id="shopsTable">
+                                        <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>To'lov</th></tr></thead>
+                                        <tbody>
+                                            {% for s in shops %}
+                                            <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] }}', '{{ s['phone'] }}', '{{ s['region'] }}', '{{ s['landmark'] }}', '{{ s['visit_days'] }}', '{{ s['inventory'] }}')">
+                                                <td><b>{{ s['name'] }}</b><br><small class="text-muted">{{ s['phone'] }}</small></td>
+                                                <td><b>{{ s['region'] }}</b><br><small class="text-muted">{{ s['landmark'] }}</small></td>
+                                                <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
+                                                <td><small class="text-primary fw-bold">{{ s['inventory'] }}</small></td>
+                                                <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
+                                                <td onclick="event.stopPropagation();">
+                                                    <form action="/pay_debt" method="POST" class="d-flex gap-1">
+                                                        <input type="hidden" name="shop_id" value="{{ s['id'] }}">
+                                                        <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
+                                                        <button type="submit" class="btn btn-sm btn-success">Prixod</button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1270,6 +1359,51 @@ HTML_TEMPLATE = """
         </div>
     </div>
 </div>
+
+<!-- DO'KONNI TAHRIRLASH MODALI -->
+<div class="modal fade" id="editShopModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editShopForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Do'kon Ma'lumotlarini Tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Do'kon Nomi:</label>
+                        <input type="text" name="name" id="edit_shop_name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Telefon Raqami:</label>
+                        <input type="text" name="phone" id="edit_shop_phone" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Hududi:</label>
+                        <input type="text" name="region" id="edit_shop_region" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Orienteri:</label>
+                        <input type="text" name="landmark" id="edit_shop_landmark" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Tashrif kunlari:</label>
+                        <input type="text" name="visit_days" id="edit_shop_visit_days" class="form-control" placeholder="Masalan: D, Ch, J">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Berilgan Inventarlar:</label>
+                        <input type="text" name="inventory" id="edit_shop_inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik, 2 ta Stelaj">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
+                    <button type="submit" class="btn btn-primary btn-sm">O'zgarishlarni Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function toggleNewProd() {
@@ -1291,6 +1425,18 @@ HTML_TEMPLATE = """
         const newRow = firstRow.cloneNode(true);
         newRow.querySelector('input[name="qty"]').value = '1';
         container.appendChild(newRow);
+    }
+    function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
+        document.getElementById('editShopForm').action = '/update_shop/' + id;
+        document.getElementById('edit_shop_name').value = name;
+        document.getElementById('edit_shop_phone').value = phone;
+        document.getElementById('edit_shop_region').value = region;
+        document.getElementById('edit_shop_landmark').value = landmark;
+        document.getElementById('edit_shop_visit_days').value = visitDays;
+        document.getElementById('edit_shop_inventory').value = inventory;
+        
+        var editModal = new bootstrap.Modal(document.getElementById('editShopModal'));
+        editModal.show();
     }
     document.addEventListener("DOMContentLoaded", function() {
         const ctx = document.getElementById('categoryDonutChart').getContext('2d');
@@ -1666,26 +1812,6 @@ def add_stock():
   return redirect(url_for('operator_dashboard'))
 
 
-@app.route('/add_shop', methods=['POST'])
-def add_shop():
-  name, phone, visit_days = (
-      request.form['name'],
-      request.form['phone'],
-      request.form.get('visit_days', ''),
-  )
-  conn = get_db_connection()
-  try:
-    conn.execute(
-        'INSERT INTO shops (name, phone, debt, visit_days) VALUES (?, ?, 0, ?)',
-        (name, phone, visit_days),
-    )
-    conn.commit()
-  except:
-    pass
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
 @app.route('/pay_debt', methods=['POST'])
 def pay_debt():
   shop_id, amount = request.form['shop_id'], float(request.form['amount'])
@@ -1784,7 +1910,9 @@ def export_excel():
       conn,
   )
   shops_df = pd.read_sql_query(
-      'SELECT name, phone, debt, visit_days FROM shops', conn
+      'SELECT name, phone, region, landmark, debt, visit_days, inventory FROM'
+      ' shops',
+      conn,
   )
   conn.close()
 
@@ -1807,9 +1935,7 @@ def run_telegram_bot():
 if __name__ == '__main__':
   init_web_db()
 
-  # Telegram botni alohida oqimda (thread) ishga tushiramiz
   bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
   bot_thread.start()
 
-  # Flask veb-serverini ishga tushiramiz
   app.run(host='0.0.0.0', port=5000, debug=False)
