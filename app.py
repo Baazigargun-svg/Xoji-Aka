@@ -29,10 +29,18 @@ app = Flask(__name__)
 DB_NAME = 'xoji_aka_factory.db'
 app.secret_key = 'xoji_aka_maxfiy_kalit_2026'
 
+# --- MANA BU YERGA QO'SHASIZ ---
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+
+if not os.path.exists(UPLOAD_FOLDER):
+  os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 user_steps = {}
 
 
-# --- BAZANI YARATISH VA YANGILASH ---
 def get_db_connection():
   conn = sqlite3.connect(DB_NAME)
   conn.row_factory = sqlite3.Row
