@@ -1231,7 +1231,7 @@ HTML_TEMPLATE = """
                 <!-- BUYURTMALAR -->
                 <div class="tab-pane fade" id="tab-orders">
                     <div class="row g-4">
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <div class="card-glass p-4">
                                 <h5 class="fw-bold text-primary mb-3"><i class="bi bi-cart-plus me-2"></i>Yangi Buyurtma Kiritish</h5>
                                 <form action="/add_order" method="POST">
@@ -1269,25 +1269,44 @@ HTML_TEMPLATE = """
                                 </form>
                             </div>
                         </div>
-                        <div class="col-md-7">
+                        <div class="col-md-8">
                             <div class="card-glass p-4 mb-3">
-                                <h6 class="fw-bold mb-2"><i class="bi bi-printer me-1"></i>Ko'p zakazlarni chiqarish</h6>
-                                <form action="/print_nakladnoy" method="GET" target="_blank" class="d-flex gap-2">
-                                    <input type="text" name="ids" class="form-control form-control-sm" placeholder="Zakaz ID lari (Masalan: 1,2,3)" required>
+                                <h6 class="fw-bold mb-2"><i class="bi bi-printer me-1"></i>Tanlangan zakazlarni chop etish</h6>
+                                <form action="/print_nakladnoy" method="GET" target="_blank" class="d-flex gap-2 align-items-center">
+                                    <input type="text" id="selectedIdsInput" name="ids" class="form-control form-control-sm" placeholder="Tanlangan ID lar (Masalan: 1,2,3)" required readonly>
                                     <button type="submit" class="btn btn-sm btn-dark text-nowrap">Chop etish</button>
                                 </form>
                             </div>
                             <div class="card-glass p-4">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                                     <h5 class="fw-bold mb-0"><i class="bi bi-list-check me-2"></i>Barcha Buyurtmalar</h5>
-                                    <input type="text" id="orderSearch" class="form-control form-control-sm" placeholder="Buyurtma qidirish..." style="width: 200px;" onkeyup="filterOrders()">
+                                    <div class="d-flex gap-2">
+                                        <select id="statusFilter" class="form-select form-select-sm" style="width: 140px;" onchange="filterOrdersTable()">
+                                            <option value="">Barcha statuslar</option>
+                                            <option value="Yangi">Yangi</option>
+                                            <option value="Otgruzka">Otgruzka</option>
+                                            <option value="Yetkazildi">Yetkazildi</option>
+                                            <option value="Bekor">Bekor</option>
+                                        </select>
+                                        <input type="text" id="orderSearch" class="form-control form-control-sm" placeholder="Buyurtma qidirish..." style="width: 180px;" onkeyup="filterOrdersTable()">
+                                    </div>
                                 </div>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="ordersTable">
-                                        <thead><tr><th>ID / Vaqt</th><th>Do'kon</th><th>Tafsilot</th><th>Status & Tarix</th><th>Amallar</th></tr></thead>
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 30px;"><input type="checkbox" id="selectAllOrders" onclick="toggleSelectAllOrders(this)"></th>
+                                                <th>ID / Vaqt</th>
+                                                <th>Do'kon</th>
+                                                <th>Tafsilot</th>
+                                                <th>Status & Tarix</th>
+                                                <th>Amallar</th>
+                                            </tr>
+                                        </thead>
                                         <tbody>
                                             {% for o in orders %}
-                                            <tr>
+                                            <tr data-status="{{ o['status'] }}">
+                                                <td><input type="checkbox" class="order-checkbox" value="{{ o['id'] }}" onclick="updateSelectedIds()"></td>
                                                 <td><b>#{{ o['id'] }}</b><br><small class="text-muted">{{ o['date'] }}</small></td>
                                                 <td><b>{{ o['shop_name'] }}</b><br><small class="text-muted">Agent: {{ o['agent_name'] }}</small></td>
                                                 <td>
@@ -1319,7 +1338,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                             </tr>
                                             {% else %}
-                                            <tr><td colspan="5" class="text-center text-muted py-4">Buyurtmalar yo'q</td></tr>
+                                            <tr><td colspan="6" class="text-center text-muted py-4">Buyurtmalar yo'q</td></tr>
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -1435,7 +1454,7 @@ HTML_TEMPLATE = """
                                 <h5 class="fw-bold mb-3"><i class="bi bi-people me-2"></i>Do'konlar Ro'yxati (Tahrirlash uchun ustiga bosing)</h5>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="shopsTable">
-                                        <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>To'lov</th></tr></thead>
+                                        <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for s in shops %}
                                             <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')">
@@ -1444,8 +1463,9 @@ HTML_TEMPLATE = """
                                                 <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
                                                 <td><small class="text-primary fw-bold">{{ s['inventory'] }}</small></td>
                                                 <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
-                                                <td onclick="event.stopPropagation();">
-                                                    <form action="/pay_debt" method="POST" class="d-flex gap-1">
+                                                <td onclick="event.stopPropagation();" class="text-nowrap">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    <form action="/pay_debt" method="POST" class="d-inline-flex gap-1 mt-1">
                                                         <input type="hidden" name="shop_id" value="{{ s['id'] }}">
                                                         <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
                                                         <button type="submit" class="btn btn-sm btn-success">Prixod</button>
@@ -1579,6 +1599,28 @@ HTML_TEMPLATE = """
     function removeRow(btn) {
         const row = btn.closest('.order-item-row');
         if(document.querySelectorAll('.order-item-row').length > 1) { row.remove(); }
+    }
+    function updateSelectedIds() {
+        let ids = [];
+        document.querySelectorAll('.order-checkbox:checked').forEach(cb => { ids.push(cb.value); });
+        document.getElementById('selectedIdsInput').value = ids.join(',');
+    }
+    function toggleSelectAllOrders(source) {
+        document.querySelectorAll('.order-checkbox').forEach(cb => { cb.checked = source.checked; });
+        updateSelectedIds();
+    }
+    function filterOrdersTable() {
+        let statusVal = document.getElementById('statusFilter').value.toLowerCase();
+        let searchVal = document.getElementById('orderSearch').value.toLowerCase();
+        let rows = document.querySelectorAll('#ordersTable tbody tr');
+        rows.forEach(row => {
+            if(row.cells.length <= 1) return;
+            let status = (row.getAttribute('data-status') || '').toLowerCase();
+            let text = row.innerText.toLowerCase();
+            let matchStatus = !statusVal || status === statusVal;
+            let matchSearch = !searchVal || text.indexOf(searchVal) > -1;
+            row.style.display = (matchStatus && matchSearch) ? '' : 'none';
+        });
     }
     function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
         document.getElementById('editShopForm').action = '/update_shop/' + id;
