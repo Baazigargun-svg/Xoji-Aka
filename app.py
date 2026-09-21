@@ -1929,7 +1929,8 @@ def export_excel():
 
 # --- ASOSIY ISHGA TUSHIRISH ---
 def run_telegram_bot():
-  bot.infinity_polling(skip_pending=True)
+bot.remove_webhook()  # <--- Mana shu qatorni yangi qilib qo'shib qo'yasiz
+bot.infinity_polling(skip_pending=True)
 
 
 if __name__ == '__main__':
