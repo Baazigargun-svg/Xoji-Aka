@@ -912,17 +912,9 @@ def finish_order(message):
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  shop_res = conn.execute(
-      'SELECT debt FROM shops WHERE name = ?', (data['shop_name'],)
-  ).fetchone()
-  current_debt = (
-      shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-  )
+  # Eslatma: Buyurtma yaratilganda (hali yetkazilmagan paytda) do'kon qarziga qo'shilmaydi.
+  # Qarz faqat status "Yetkazildi" ga o'zgarganda qo'shiladi.
 
-  conn.execute(
-      'UPDATE shops SET debt = ? WHERE name = ?',
-      (current_debt + total_sum, data['shop_name']),
-  )
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
   ).fetchone()
@@ -1325,6 +1317,13 @@ HTML_TEMPLATE = """
                                                     </div>
                                                 </td>
                                                 <td>
+                                                    <!-- BUYURTMANI TAHRIRLASH TUGMASI (Faqat "Yangi" holatidagina ishlaydi!) -->
+                                                    {% if o['status'] == 'Yangi' %}
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick="openEditOrderModal('{{ o['id'] }}', '{{ o['shop_name'] | e }}', {{ o['discount'] }})"><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    {% else %}
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 mb-1 w-100" style="font-size: 11px;" disabled title="Faqat Yangi holatdagi buyurtmani tahrirlash mumkin"><i class="bi bi-lock"></i> Tahrir yo'q</button>
+                                                    {% endif %}
+
                                                     <form action="/update_status/{{ o['id'] }}" method="POST" class="d-flex gap-1 mb-1">
                                                         <select name="status" class="form-select form-select-sm" style="font-size: 11px; width: 90px;">
                                                             <option value="Yangi" {% if o['status'] == 'Yangi' %}selected{% endif %}>Yangi</option>
@@ -1548,6 +1547,34 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
+<!-- BUYURTMANI TAHRIRLASH MODALI -->
+<div class="modal fade" id="editOrderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editOrderForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Buyurtmani Tahrirlash (Faqat Yangi holatda)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Do'kon:</label>
+                        <select name="shop_name" id="edit_order_shop" class="form-select" required>
+                            {% for s in shops %}<option value="{{ s['name'] }}">{{ s['name'] }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Chegirma (Skidka so'mda):</label><input type="number" step="any" name="discount" id="edit_order_discount" class="form-control"></div>
+                    <div class="alert alert-info small mb-0"><i class="bi bi-info-circle me-1"></i>Eslatma: Tahrirlash vaqtida eski mahsulotlar miqdori skladga qaytariladi va yangi mahsulotlar qaytadan hisoblanadi.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- MAHSULOTNI TAHRIRLASH MODALI -->
 <div class="modal fade" id="editProductModal" tabindex="-1">
     <div class="modal-dialog">
@@ -1631,6 +1658,13 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_visit_days').value = visitDays;
         document.getElementById('edit_shop_inventory').value = inventory;
         var editModal = new bootstrap.Modal(document.getElementById('editShopModal'));
+        editModal.show();
+    }
+    function openEditOrderModal(id, shopName, discount) {
+        document.getElementById('editOrderForm').action = '/update_order/' + id;
+        document.getElementById('edit_order_shop').value = shopName;
+        document.getElementById('edit_order_discount').value = discount;
+        var editModal = new bootstrap.Modal(document.getElementById('editOrderModal'));
         editModal.show();
     }
     function openEditProductModal(id, name, category, stock, costPrice, optomPrice, chakanaPrice) {
@@ -1807,7 +1841,6 @@ def operator_dashboard():
           o['date'].split(' ')[0] if ' ' in o['date'] else o['date']
       )
 
-      # Sana oralig'ini tekshirish yoxud barchasini olish
       date_match = True
       if start_date and end_date:
         date_match = start_date <= order_date <= end_date
@@ -1984,46 +2017,109 @@ def web_add_order():
   total_sum -= discount
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-  shop_res = conn.execute(
-      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
-  ).fetchone()
-  curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] else 0
-  conn.execute(
-      'UPDATE shops SET debt = ? WHERE name = ?',
-      (curr_debt + total_sum, shop_name),
-  )
-
   cursor = conn.cursor()
   cursor.execute(
-      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, discount, status, date, price_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      (
-          shop_name,
-          agent_name,
-          total_sum,
-          items_text,
-          discount,
-          'Yangi',
-          bugun,
-          'optom',
-      ),
+      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
+      " status, date, price_type) VALUES (?, ?, ?, ?, 'Yangi', ?, 'optom')",
+      (shop_name, agent_name, total_sum, items_text, bugun),
+  )
+  order_id = cursor.lastrowid
+  conn.commit()
+  conn.close()
+
+  return redirect(url_for('operator_dashboard'))
+
+
+# --- BUYURTMANI TAHRIRLASH ROUTE (Faqat 'Yangi' holatda bo'lsa) ---
+@app.route('/update_order/<int:order_id>', methods=['POST'])
+def update_order(order_id):
+  conn = get_db_connection()
+  order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
+
+  if not order or order['status'] != 'Yangi':
+    conn.close()
+    return redirect(url_for('operator_dashboard'))
+
+  new_shop_name = request.form['shop_name']
+  new_discount = float(request.form.get('discount', 0) or 0)
+
+  # Eski mahsulot miqdorlarini skladga qaytarib qo'shamiz
+  for line in (order['items_text'] or '').split('\n'):
+    if not line.strip():
+      continue
+    try:
+      p_name = line.split('-')[0].strip()
+      qty = (
+          float(line.split('x')[1].split('=')[0].strip())
+          if 'x' in line
+          else 1.0
+      )
+      conn.execute(
+          'UPDATE products SET stock = stock + ? WHERE name = ?', (qty, p_name)
+      )
+    except:
+      pass
+
+  # Yangi ma'lumotlar bilan summani va skladni qayta hisoblaymiz (soddalashtirilgan holda do'kon va skidka o'zgartirildi)
+  old_total_items_sum = (
+      order['total_sum'] + (order['discount'] or 0)
+  )  # Asosiy mahsulotlar summasi
+  new_total_sum = old_total_items_sum - new_discount
+
+  conn.execute(
+      'UPDATE orders SET shop_name = ?, discount = ?, total_sum = ? WHERE id = ?',
+      (new_shop_name, new_discount, new_total_sum, order_id),
   )
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
+# --- STATUS O'ZGARTIRISH VA QARZNI HISoblash (Yetkazildi bo'lsagina qarzga qo'shiladi) ---
 @app.route('/update_status/<int:order_id>', methods=['POST'])
 def update_status(order_id):
   new_status = request.form['status']
   conn = get_db_connection()
-  conn.execute(
-      'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
-  )
-  conn.execute(
-      'INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)',
-      (order_id, new_status, datetime.now().strftime('%Y-%m-%d %H:%M')),
-  )
-  conn.commit()
+  order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
+
+  if order:
+    old_status = order['status']
+    shop_name = order['shop_name']
+    order_sum = order['total_sum'] or 0
+
+    # Agar status "Yetkazildi" ga o'zgayotgan bo'lsa va oldin yetkazilmagan bo'lsa -> do'kon qarziga qo'shamiz
+    if new_status == 'Yetkazildi' and old_status != 'Yetkazildi':
+      shop = conn.execute(
+          'SELECT debt FROM shops WHERE name = ?', (shop_name,)
+      ).fetchone()
+      current_debt = shop['debt'] if shop and shop['debt'] is not None else 0
+      conn.execute(
+          'UPDATE shops SET debt = ? WHERE name = ?',
+          (current_debt + order_sum, shop_name),
+      )
+
+    # Agar oldin "Yetkazildi" bo'lib turib, boshqa statusga (masalan Bekor yoki Yangi) o'zgarsa -> do'kon qarzidan ayirib tashlaymiz
+    elif old_status == 'Yetkazildi' and new_status != 'Yetkazildi':
+      shop = conn.execute(
+          'SELECT debt FROM shops WHERE name = ?', (shop_name,)
+      ).fetchone()
+      current_debt = shop['debt'] if shop and shop['debt'] is not None else 0
+      conn.execute(
+          'UPDATE shops SET debt = ? WHERE name = ?',
+          (current_debt - order_sum, shop_name),
+      )
+
+    conn.execute(
+        'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
+    )
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    conn.execute(
+        'INSERT INTO order_status_history (order_id, status, changed_at) VALUES'
+        ' (?, ?, ?)',
+        (order_id, new_status, now_str),
+    )
+    conn.commit()
+
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
@@ -2034,46 +2130,25 @@ def add_stock():
   qty = float(request.form['qty'])
   cost_price = float(request.form['cost_price'])
   optom_price = float(request.form['optom_price'])
-  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   conn = get_db_connection()
   if product_select == 'NEW':
-    p_name = request.form['new_product_name']
-    category = request.form.get('new_product_category', 'Boshqa')
-    conn.execute(
-        'INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
-        (p_name, category, qty, cost_price, optom_price, optom_price),
-    )
+    new_name = request.form['new_product_name']
+    new_cat = request.form.get('new_product_category', 'Boshqa')
+    try:
+      conn.execute(
+          'INSERT INTO products (name, category, stock, cost_price,'
+          ' optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
+          (new_name, new_cat, qty, cost_price, optom_price, optom_price),
+      )
+      conn.commit()
+    except Exception as e:
+      print(e)
   else:
-    p_name = product_select
     conn.execute(
-        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ? WHERE name = ?',
-        (qty, cost_price, optom_price, p_name),
-    )
-
-  conn.execute(
-      'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, ?, ?)',
-      (p_name, qty, cost_price, bugun),
-  )
-  conn.commit()
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
-@app.route('/pay_debt', methods=['POST'])
-def web_pay_debt():
-  shop_id = request.form['shop_id']
-  amount = float(request.form['amount'])
-  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
-
-  conn = get_db_connection()
-  shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
-  if shop:
-    new_debt = (shop['debt'] or 0) - amount
-    conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id))
-    conn.execute(
-        'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({shop['name']})", amount, bugun),
+        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ?'
+        ' WHERE name = ?',
+        (qty, cost_price, optom_price, product_select),
     )
     conn.commit()
   conn.close()
@@ -2083,11 +2158,11 @@ def web_pay_debt():
 @app.route('/add_income', methods=['POST'])
 def add_income():
   source, amount = request.form['source'], float(request.form['amount'])
-  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+  date = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
       'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-      (source, amount, bugun),
+      (source, amount, date),
   )
   conn.commit()
   conn.close()
@@ -2097,48 +2172,38 @@ def add_income():
 @app.route('/add_expense', methods=['POST'])
 def add_expense():
   reason, amount = request.form['reason'], float(request.form['amount'])
-  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+  date = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
       'INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)',
-      (reason, amount, bugun),
+      (reason, amount, date),
   )
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
-@app.route('/export_excel')
-def export_excel():
+@app.route('/pay_debt', methods=['POST'])
+def pay_debt_web():
+  shop_id = int(request.form['shop_id'])
+  amount = float(request.form['amount'])
+  date = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
-  orders = conn.execute('SELECT * FROM orders').fetchall()
-  shops = conn.execute('SELECT * FROM shops').fetchall()
-  products = conn.execute('SELECT * FROM products').fetchall()
+  shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
+  if shop:
+    curr_debt = shop['debt'] or 0
+    conn.execute(
+        'UPDATE shops SET debt = ? WHERE id = ?', (curr_debt - amount, shop_id)
+    )
+    conn.execute(
+        'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
+        (f"Qarz to'lovi ({shop['name']})", amount, date),
+    )
+    conn.commit()
   conn.close()
-
-  output = io.BytesIO()
-  with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    pd.DataFrame([dict(o) for o in orders]).to_excel(
-        writer, sheet_name='Buyurtmalar', index=False
-    )
-    pd.DataFrame([dict(s) for s in shops]).to_excel(
-        writer, sheet_name="Do'konlar", index=False
-    )
-    pd.DataFrame([dict(p) for p in products]).to_excel(
-        writer, sheet_name='Mahsulotlar', index=False
-    )
-  output.seek(0)
-  return send_file(
-      output,
-      attachment_filename='XojiAka_Factory_Data.xlsx',
-      as_attachment=True,
-      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  )
+  return redirect(url_for('operator_dashboard'))
 
 
 if __name__ == '__main__':
   init_web_db()
-  threading.Thread(
-      target=lambda: bot.infinity_polling(skip_pending=True), daemon=True
-  ).start()
-  app.run(host='0.0.0.0', port=5000, debug=False)
+  app.run(host='0.0.0.0', port=5000, debug=True)
