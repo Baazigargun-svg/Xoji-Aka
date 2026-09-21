@@ -621,6 +621,37 @@ def update_shop(shop_id):
   return redirect(url_for('operator_dashboard'))
 
 
+@app.route('/update_product/<int:prod_id>', methods=['POST'])
+def update_product(prod_id):
+  name = request.form['name']
+  category = request.form.get('category', 'Boshqa')
+  stock = float(request.form.get('stock', 0))
+  cost_price = float(request.form.get('cost_price', 0))
+  optom_price = float(request.form.get('optom_price', 0))
+  chakana_price = float(request.form.get('chakana_price', optom_price))
+
+  conn = get_db_connection()
+  try:
+    conn.execute(
+        'UPDATE products SET name = ?, category = ?, stock = ?, cost_price ='
+        ' ?, optom_price = ?, chakana_price = ? WHERE id = ?',
+        (
+            name,
+            category,
+            stock,
+            cost_price,
+            optom_price,
+            chakana_price,
+            prod_id,
+        ),
+    )
+    conn.commit()
+  except Exception as e:
+    print('Mahsulotni tahrirlash xatosi:', e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
 @app.route('/import_shops_excel', methods=['POST'])
 def import_shops_excel():
   if 'excel_file' not in request.files:
@@ -1106,6 +1137,8 @@ HTML_TEMPLATE = """
         .day-badge.selected { background: #3b82f6; color: white; border-color: #2563eb; }
         .shop-row { cursor: pointer; }
         .shop-row:hover { background-color: #f1f5f9 !important; }
+        .product-row { cursor: pointer; }
+        .product-row:hover { background-color: #f1f5f9 !important; }
     </style>
 </head>
 <body>
@@ -1335,13 +1368,13 @@ HTML_TEMPLATE = """
                         </div>
                         <div class="col-md-7">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar (Tahrirlash uchun ustiga bosing)</h5>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover" id="productsTable">
                                         <thead><tr><th>Mahsulot</th><th>Kategoriya</th><th>Qoldiq</th><th>Tan narx</th><th>Optom narx</th></tr></thead>
                                         <tbody>
                                             {% for p in products %}
-                                            <tr>
+                                            <tr class="product-row" onclick="openEditProductModal('{{ p['id'] }}', '{{ p['name'] | e }}', '{{ p['category'] | e }}', '{{ p['stock'] }}', '{{ p['cost_price'] }}', '{{ p['optom_price'] }}', '{{ p['chakana_price'] }}')">
                                                 <td><b>{{ p['name'] }}</b></td>
                                                 <td><span class="badge bg-light text-dark border">{{ p['category'] }}</span></td>
                                                 <td><span class="badge bg-success">{{ p['stock'] }}</span></td>
@@ -1405,7 +1438,7 @@ HTML_TEMPLATE = """
                                         <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>To'lov</th></tr></thead>
                                         <tbody>
                                             {% for s in shops %}
-                                            <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] }}', '{{ s['phone'] }}', '{{ s['region'] }}', '{{ s['landmark'] }}', '{{ s['visit_days'] }}', '{{ s['inventory'] }}')">
+                                            <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')">
                                                 <td><b>{{ s['name'] }}</b><br><small class="text-muted">{{ s['phone'] }}</small></td>
                                                 <td><b>{{ s['region'] }}</b><br><small class="text-muted">{{ s['landmark'] }}</small></td>
                                                 <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
@@ -1495,6 +1528,32 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
+<!-- MAHSULOTNI TAHRIRLASH MODALI -->
+<div class="modal fade" id="editProductModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editProductForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Mahsulot Ma'lumotlarini Tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label small fw-bold">Mahsulot Nomi:</label><input type="text" name="name" id="edit_prod_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Kategoriya:</label><input type="text" name="category" id="edit_prod_category" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Qoldiq (Soni):</label><input type="number" step="any" name="stock" id="edit_prod_stock" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Tan Narxi:</label><input type="number" step="any" name="cost_price" id="edit_prod_cost" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Optom Narxi:</label><input type="number" step="any" name="optom_price" id="edit_prod_optom" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Chakana Narxi:</label><input type="number" step="any" name="chakana_price" id="edit_prod_chakana" class="form-control" required></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
+                    <button type="submit" class="btn btn-primary btn-sm">O'zgarishlarni Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function toggleNewProd() {
@@ -1530,6 +1589,17 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_visit_days').value = visitDays;
         document.getElementById('edit_shop_inventory').value = inventory;
         var editModal = new bootstrap.Modal(document.getElementById('editShopModal'));
+        editModal.show();
+    }
+    function openEditProductModal(id, name, category, stock, costPrice, optomPrice, chakanaPrice) {
+        document.getElementById('editProductForm').action = '/update_product/' + id;
+        document.getElementById('edit_prod_name').value = name;
+        document.getElementById('edit_prod_category').value = category;
+        document.getElementById('edit_prod_stock').value = stock;
+        document.getElementById('edit_prod_cost').value = costPrice;
+        document.getElementById('edit_prod_optom').value = optomPrice;
+        document.getElementById('edit_prod_chakana').value = chakanaPrice;
+        var editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
         editModal.show();
     }
     document.addEventListener("DOMContentLoaded", function() {
