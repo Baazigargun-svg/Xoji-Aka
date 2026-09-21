@@ -356,7 +356,9 @@ def admin_product_detail(call):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith(('stk_', 'prc_')))
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith(('stk_', 'prc_'))
+)
 def admin_stock_price_actions(call):
   prefix, action, p_id = call.data.split('_')
   p_id = int(p_id)
@@ -614,6 +616,61 @@ def update_shop(shop_id):
         ' visit_days = ?, inventory = ? WHERE id = ?',
         (name, phone, region, landmark, visit_days, inventory, shop_id),
     )
+    conn.commit()
+  except Exception as e:
+    print(e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/delete_shop/<int:shop_id>', methods=['POST'])
+def delete_shop(shop_id):
+  conn = get_db_connection()
+  try:
+    conn.execute('DELETE FROM shops WHERE id = ?', (shop_id,))
+    conn.commit()
+  except Exception as e:
+    print(e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/update_product/<int:prod_id>', methods=['POST'])
+def update_product(prod_id):
+  name = request.form['name']
+  category = request.form.get('category', 'Boshqa')
+  stock = float(request.form.get('stock', 0))
+  cost_price = float(request.form.get('cost_price', 0))
+  optom_price = float(request.form.get('optom_price', 0))
+  chakana_price = float(request.form.get('chakana_price', 0))
+
+  conn = get_db_connection()
+  try:
+    conn.execute(
+        'UPDATE products SET name = ?, category = ?, stock = ?, cost_price = ?,'
+        ' optom_price = ?, chakana_price = ? WHERE id = ?',
+        (
+            name,
+            category,
+            stock,
+            cost_price,
+            optom_price,
+            chakana_price,
+            prod_id,
+        ),
+    )
+    conn.commit()
+  except Exception as e:
+    print(e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/delete_product/<int:prod_id>', methods=['POST'])
+def delete_product(prod_id):
+  conn = get_db_connection()
+  try:
+    conn.execute('DELETE FROM products WHERE id = ?', (prod_id,))
     conn.commit()
   except Exception as e:
     print(e)
@@ -1158,24 +1215,30 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                         <div class="col-md-7">
-                            <div class="card-glass p-4 mb-3">
-                                <h6 class="fw-bold mb-2"><i class="bi bi-printer me-1"></i>Ko'p zakazlarni chiqarish</h6>
-                                <form action="/print_nakladnoy" method="GET" target="_blank" class="d-flex gap-2">
-                                    <input type="text" name="ids" class="form-control form-control-sm" placeholder="Zakaz ID lari (Masalan: 1,2,3)" required>
-                                    <button type="submit" class="btn btn-sm btn-dark text-nowrap">Chop etish</button>
-                                </form>
-                            </div>
                             <div class="card-glass p-4">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h5 class="fw-bold mb-0"><i class="bi bi-list-check me-2"></i>Barcha Buyurtmalar</h5>
-                                    <input type="text" id="orderSearch" class="form-control form-control-sm" placeholder="Buyurtma qidirish..." style="width: 200px;" onkeyup="filterOrders()">
+                                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <h5 class="fw-bold mb-0"><i class="bi bi-list-check me-2"></i>Buyurtmalar</h5>
+                                        <select id="orderStatusFilter" class="form-select form-select-sm" style="width: 130px;" onchange="filterOrderStatus()">
+                                            <option value="ALL">Barchasi</option>
+                                            <option value="Yangi">Yangi</option>
+                                            <option value="Otgruzka">Otgruzka</option>
+                                            <option value="Yetkazildi">Yetkazildi</option>
+                                            <option value="Bekor">Bekor</option>
+                                        </select>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="text" id="orderSearch" class="form-control form-control-sm" placeholder="Buyurtma qidirish..." style="width: 150px;" onkeyup="filterOrders()">
+                                        <button type="button" class="btn btn-sm btn-dark text-nowrap" onclick="printSelectedOrders()"><i class="bi bi-printer me-1"></i>Tanlanganni Chop etish</button>
+                                    </div>
                                 </div>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="ordersTable">
-                                        <thead><tr><th>ID / Vaqt</th><th>Do'kon</th><th>Tafsilot</th><th>Status & Tarix</th><th>Amallar</th></tr></thead>
+                                        <thead><tr><th style="width: 30px;"><input type="checkbox" id="selectAllOrders" onclick="toggleSelectAllOrders(this)"></th><th>ID / Vaqt</th><th>Do'kon</th><th>Tafsilot</th><th>Status</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for o in orders %}
                                             <tr>
+                                                <td><input type="checkbox" class="order-checkbox" value="{{ o['id'] }}"></td>
                                                 <td><b>#{{ o['id'] }}</b><br><small class="text-muted">{{ o['date'] }}</small></td>
                                                 <td><b>{{ o['shop_name'] }}</b><br><small class="text-muted">Agent: {{ o['agent_name'] }}</small></td>
                                                 <td>
@@ -1207,7 +1270,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                             </tr>
                                             {% else %}
-                                            <tr><td colspan="5" class="text-center text-muted py-4">Buyurtmalar yo'q</td></tr>
+                                            <tr><td colspan="6" class="text-center text-muted py-4">Buyurtmalar yo'q</td></tr>
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -1244,10 +1307,10 @@ HTML_TEMPLATE = """
                         </div>
                         <div class="col-md-7">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar (Tahrirlash / O'chirish)</h5>
                                 <div class="table-responsive">
-                                    <table class="table table-custom table-hover" id="productsTable">
-                                        <thead><tr><th>Mahsulot</th><th>Kategoriya</th><th>Qoldiq</th><th>Tan narx</th><th>Optom narx</th></tr></thead>
+                                    <table class="table table-custom table-hover align-middle" id="productsTable">
+                                        <thead><tr><th>Mahsulot</th><th>Kategoriya</th><th>Qoldiq</th><th>Tan narx</th><th>Optom narx</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for p in products %}
                                             <tr>
@@ -1256,6 +1319,12 @@ HTML_TEMPLATE = """
                                                 <td><span class="badge bg-success">{{ p['stock'] }}</span></td>
                                                 <td>{{ "{:,.0f}".format(p['cost_price']) }}</td>
                                                 <td>{{ "{:,.0f}".format(p['optom_price']) }}</td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" onclick="openEditProductModal('{{ p['id'] }}', '{{ p['name'] }}', '{{ p['category'] }}', '{{ p['stock'] }}', '{{ p['cost_price'] }}', '{{ p['optom_price'] }}', '{{ p['chakana_price'] }}')"><i class="bi bi-pencil"></i></button>
+                                                    <form action="/delete_product/{{ p['id'] }}" method="POST" class="d-inline" onsubmit="return confirm('Haqiqatan ham ushbu mahsulotni o\'chirmoqchimisiz?');">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                                                    </form>
+                                                </td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>
@@ -1311,7 +1380,7 @@ HTML_TEMPLATE = """
                                 <h5 class="fw-bold mb-3"><i class="bi bi-people me-2"></i>Do'konlar Ro'yxati (Tahrirlash uchun ustiga bosing)</h5>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="shopsTable">
-                                        <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>To'lov</th></tr></thead>
+                                        <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for s in shops %}
                                             <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] }}', '{{ s['phone'] }}', '{{ s['region'] }}', '{{ s['landmark'] }}', '{{ s['visit_days'] }}', '{{ s['inventory'] }}')">
@@ -1321,11 +1390,16 @@ HTML_TEMPLATE = """
                                                 <td><small class="text-primary fw-bold">{{ s['inventory'] }}</small></td>
                                                 <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
                                                 <td onclick="event.stopPropagation();">
-                                                    <form action="/pay_debt" method="POST" class="d-flex gap-1">
-                                                        <input type="hidden" name="shop_id" value="{{ s['id'] }}">
-                                                        <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
-                                                        <button type="submit" class="btn btn-sm btn-success">Prixod</button>
-                                                    </form>
+                                                    <div class="d-flex gap-1 align-items-center">
+                                                        <form action="/pay_debt" method="POST" class="d-flex gap-1">
+                                                            <input type="hidden" name="shop_id" value="{{ s['id'] }}">
+                                                            <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 70px;">
+                                                            <button type="submit" class="btn btn-sm btn-success px-1">Prixod</button>
+                                                        </form>
+                                                        <form action="/delete_shop/{{ s['id'] }}" method="POST" class="d-inline" onsubmit="return confirm('Do\'konni o\'chirishni xohlaysizmi?');">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                                                        </form>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             {% endfor %}
@@ -1404,6 +1478,32 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
+<!-- MAHSULOTNI TAHRIRLASH MODALI -->
+<div class="modal fade" id="editProductModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editProductForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Mahsulotni Tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label small fw-bold">Nomi:</label><input type="text" name="name" id="edit_prod_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Kategoriya:</label><input type="text" name="category" id="edit_prod_category" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Qoldiq (Sklad):</label><input type="number" step="any" name="stock" id="edit_prod_stock" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Tan Narxi:</label><input type="number" step="any" name="cost_price" id="edit_prod_cost" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Optom Narxi:</label><input type="number" step="any" name="optom_price" id="edit_prod_optom" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Chakana Narxi:</label><input type="number" step="any" name="chakana_price" id="edit_prod_chakana" class="form-control" required></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function toggleNewProd() {
@@ -1440,6 +1540,44 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_inventory').value = inventory;
         var editModal = new bootstrap.Modal(document.getElementById('editShopModal'));
         editModal.show();
+    }
+    function openEditProductModal(id, name, category, stock, cost, optom, chakana) {
+        document.getElementById('editProductForm').action = '/update_product/' + id;
+        document.getElementById('edit_prod_name').value = name;
+        document.getElementById('edit_prod_category').value = category;
+        document.getElementById('edit_prod_stock').value = stock;
+        document.getElementById('edit_prod_cost').value = cost;
+        document.getElementById('edit_prod_optom').value = optom;
+        document.getElementById('edit_prod_chakana').value = chakana;
+        var editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
+        editModal.show();
+    }
+    function filterOrderStatus() {
+        const status = document.getElementById('orderStatusFilter').value;
+        const rows = document.querySelectorAll('#ordersTable tbody tr');
+        rows.forEach(row => {
+            const badge = row.querySelector('.badge');
+            if (!badge) return;
+            const rowStatus = badge.textContent.trim();
+            if (status === 'ALL' || rowStatus === status) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+    function toggleSelectAllOrders(master) {
+        const checkboxes = document.querySelectorAll('.order-checkbox');
+        checkboxes.forEach(cb => { cb.checked = master.checked; });
+    }
+    function printSelectedOrders() {
+        const checkboxes = document.querySelectorAll('.order-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert('Iltimos, avval chop etish uchun buyurtmalarni tanlang!');
+            return;
+        }
+        const ids = Array.from(checkboxes).map(cb => cb.value).join(',');
+        window.open('/print_nakladnoy?ids=' + ids, '_blank');
     }
     document.addEventListener("DOMContentLoaded", function() {
         const ctx = document.getElementById('categoryDonutChart').getContext('2d');
@@ -1604,7 +1742,6 @@ def operator_dashboard():
           o['date'].split(' ')[0] if ' ' in o['date'] else o['date']
       )
 
-      # Sana oralig'ini tekshirish yoxud barchasini olish
       date_match = True
       if start_date and end_date:
         date_match = start_date <= order_date <= end_date
