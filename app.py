@@ -29,7 +29,6 @@ app = Flask(__name__)
 DB_NAME = 'xoji_aka_factory.db'
 app.secret_key = 'xoji_aka_maxfiy_kalit_2026'
 
-# --- MANA BU YERGA QO'SHASIZ ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
@@ -37,7 +36,6 @@ if not os.path.exists(UPLOAD_FOLDER):
   os.makedirs(UPLOAD_FOLDER)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 user_steps = {}
 
 
@@ -122,7 +120,6 @@ def init_web_db():
   conn.close()
 
 
-# --- EXCEL NAKLADNOY YARATISH (BOT UCHUN) ---
 def create_excel_invoice(
     order_id, shop_name, agent_name, date_str, price_type, cart_items
 ):
@@ -638,27 +635,36 @@ def import_shops_excel():
     cursor = conn.cursor()
 
     for _, row in df.iterrows():
-      # Ustun nomlarini moslashtirish (exceldagiga qarab)
-      name = str(row.get('name', row.get("Do'kon nomi", ''))).strip()
+      name = str(
+          row.get('name', row.get("Do'kon nomi", row.get('Magazin', '')))
+      ).strip()
       if not name or name == 'nan':
         continue
-      phone = str(row.get('phone', row.get('Telefon', ''))).strip()
-      region = str(row.get('region', row.get('Hudud', ''))).strip()
-      landmark = str(row.get('landmark', row.get('Orienter', ''))).strip()
-      visit_days = str(
-          row.get('visit_days', row.get('Tashrif kunlari', ''))
+      phone = str(row.get('phone', row.get('Telefon', row.get('Tel', '')))).strip()
+      region = str(row.get('region', row.get('Hudud', row.get('Rayon', '')))).strip()
+      landmark = str(
+          row.get('landmark', row.get('Orienter', row.get("Mo'ljal", '')))
       ).strip()
-      inventory = str(row.get('inventory', row.get('Inventar', ''))).strip()
+      visit_days = str(
+          row.get(
+              'visit_days', row.get('Tashrif kunlari', row.get('Kunlar', ''))
+          )
+      ).strip()
+      inventory = str(
+          row.get(
+              'inventory', row.get('Inventar', row.get('Jihoz', ''))
+          )
+      ).strip()
 
       debt_val = 0
-      try:
-        debt_val = float(
-            row.get('debt', row.get('Qarz', 0)) or 0
-        )
-      except:
-        pass
+      for d_key in ['debt', 'Qarz', 'Balans', 'Borg']:
+        if d_key in row and pd.notna(row[d_key]):
+          try:
+            debt_val = float(row[d_key])
+            break
+          except:
+            pass
 
-      # Bazaga kiritish (agar mavjud bo'lsa yangilash yoki o'tkazib yuborish)
       cursor.execute(
           '''INSERT INTO shops (name, phone, debt, visit_days, region, landmark, inventory) 
                        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -667,9 +673,9 @@ def import_shops_excel():
                        visit_days=excluded.visit_days, inventory=excluded.inventory''',
           (
               name,
-              phone,
+              phone if phone != 'nan' else '',
               debt_val,
-              visit_days,
+              visit_days if visit_days != 'nan' else '',
               region if region != 'nan' else '',
               landmark if landmark != 'nan' else '',
               inventory if inventory != 'nan' else '',
@@ -816,7 +822,7 @@ def finish_order(message):
   cursor = conn.cursor()
   cursor.execute(
       'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
-      ' status, date, price_type) VALUES (?, ?, ?, ?, \'Yangi\', ?, ?)',
+      " status, date, price_type) VALUES (?, ?, ?, ?, 'Yangi', ?, ?)",
       (
           data['shop_name'],
           agent_name,
@@ -899,8 +905,7 @@ def process_register_name(message):
 def save_pending_user(message, name):
   conn = get_db_connection()
   conn.execute(
-      'INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?, ?, ?,'
-      " 'pending')",
+      "INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?, ?, ?, 'pending')",
       (message.from_user.id, name, message.text),
   )
   conn.commit()
@@ -1042,13 +1047,18 @@ HTML_TEMPLATE = """
     <div class="flex-grow-1">
         <div class="top-bar d-flex justify-content-between align-items-center">
             <div class="fw-bold text-dark fs-6"><i class="bi bi-shield-check text-primary me-2"></i>Boshqaruv Markazi</div>
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
                 <a href="/logout" class="btn btn-sm btn-outline-danger fw-bold"><i class="bi bi-box-arrow-right me-1"></i>Chiqish</a>
                 <a href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Excelga Yuklab Olish</a>
-                <form method="GET" action="/" class="d-flex align-items-center gap-2 m-0">
-                    <span class="text-muted small">Sana filtri:</span>
-                    <input type="date" name="filter_date" value="{{ filter_date }}" class="form-control form-control-sm" style="width: 140px;" onchange="this.form.submit()">
-                    <a href="/" class="btn btn-sm btn-light border">Barchasi</a>
+                
+                <!-- SANA ORALIQ (QACHONDAN QACHONGACHA) FILTRI -->
+                <form method="GET" action="/" class="d-flex align-items-center gap-1 m-0 bg-light p-1 rounded border">
+                    <span class="text-muted small px-1">Dan:</span>
+                    <input type="date" name="start_date" value="{{ start_date }}" class="form-control form-control-sm" style="width: 130px;">
+                    <span class="text-muted small px-1">Gacha:</span>
+                    <input type="date" name="end_date" value="{{ end_date }}" class="form-control form-control-sm" style="width: 130px;">
+                    <button type="submit" class="btn btn-sm btn-primary">Saralash</button>
+                    <a href="/" class="btn btn-sm btn-light border" title="Tozalash">✕</a>
                 </form>
             </div>
         </div>
@@ -1059,7 +1069,7 @@ HTML_TEMPLATE = """
                     <div class="row g-4 mb-4">
                         <div class="col-md-4">
                             <div class="stat-box stat-blue shadow-sm">
-                                <div class="small text-white-50">Tanlangan Sana Tushumi</div>
+                                <div class="small text-white-50">Tanlangan Davr Tushumi</div>
                                 <h2 class="fw-bold mt-1 mb-0">{{ "{:,.0f}".format(daily_sum) }} <span class="fs-6">so'm</span></h2>
                             </div>
                         </div>
@@ -1264,7 +1274,7 @@ HTML_TEMPLATE = """
                                 <form action="/import_shops_excel" method="POST" enctype="multipart/form-data" class="d-flex align-items-center gap-3">
                                     <input type="file" name="excel_file" class="form-control form-control-sm" accept=".xlsx, .xls" required style="max-width: 350px;">
                                     <button type="submit" class="btn btn-sm btn-success fw-bold text-nowrap"><i class="bi bi-upload me-1"></i>Excelni Yuklash</button>
-                                    <small class="text-muted">(Excel ustun nomlari: <b>Do'kon nomi</b> (yoki name), <b>Telefon</b>, <b>Hudud</b>, <b>Orienter</b>, <b>Qarz</b>)</small>
+                                    <small class="text-muted">(Excel ustunlari: <b>Do'kon nomi</b>, <b>Telefon</b>, <b>Hudud</b>, <b>Orienter</b>, <b>Qarz</b>)</small>
                                 </form>
                             </div>
                         </div>
@@ -1278,7 +1288,7 @@ HTML_TEMPLATE = """
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar (Sovutgich, stelaj):</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar:</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
                                     <div class="mb-3">
                                         <label class="form-label small fw-bold">Tashrif kunlari:</label>
                                         <div class="d-flex flex-wrap gap-1">
@@ -1378,30 +1388,12 @@ HTML_TEMPLATE = """
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Do'kon Nomi:</label>
-                        <input type="text" name="name" id="edit_shop_name" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Telefon Raqami:</label>
-                        <input type="text" name="phone" id="edit_shop_phone" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Hududi:</label>
-                        <input type="text" name="region" id="edit_shop_region" class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Orienteri:</label>
-                        <input type="text" name="landmark" id="edit_shop_landmark" class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Tashrif kunlari:</label>
-                        <input type="text" name="visit_days" id="edit_shop_visit_days" class="form-control" placeholder="Masalan: D, Ch, J">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Berilgan Inventarlar:</label>
-                        <input type="text" name="inventory" id="edit_shop_inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik, 2 ta Stelaj">
-                    </div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Do'kon Nomi:</label><input type="text" name="name" id="edit_shop_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqami:</label><input type="text" name="phone" id="edit_shop_phone" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" id="edit_shop_region" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" id="edit_shop_landmark" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Tashrif kunlari:</label><input type="text" name="visit_days" id="edit_shop_visit_days" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan Inventarlar:</label><input type="text" name="inventory" id="edit_shop_inventory" class="form-control"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
@@ -1434,6 +1426,10 @@ HTML_TEMPLATE = """
         newRow.querySelector('input[name="qty"]').value = '1';
         container.appendChild(newRow);
     }
+    function removeRow(btn) {
+        const row = btn.closest('.order-item-row');
+        if(document.querySelectorAll('.order-item-row').length > 1) { row.remove(); }
+    }
     function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
         document.getElementById('editShopForm').action = '/update_shop/' + id;
         document.getElementById('edit_shop_name').value = name;
@@ -1442,7 +1438,6 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_landmark').value = landmark;
         document.getElementById('edit_shop_visit_days').value = visitDays;
         document.getElementById('edit_shop_inventory').value = inventory;
-        
         var editModal = new bootstrap.Modal(document.getElementById('editShopModal'));
         editModal.show();
     }
@@ -1572,7 +1567,8 @@ def logout():
 
 @app.route('/')
 def operator_dashboard():
-  selected_date = request.args.get('filter_date', '')
+  start_date = request.args.get('start_date', '')
+  end_date = request.args.get('end_date', '')
   conn = get_db_connection()
 
   orders_raw = conn.execute('SELECT * FROM orders ORDER BY id DESC').fetchall()
@@ -1608,10 +1604,16 @@ def operator_dashboard():
           o['date'].split(' ')[0] if ' ' in o['date'] else o['date']
       )
 
-      if o['status'] == 'Yetkazildi':
-        if not selected_date or order_date == selected_date:
-          daily_sum += order_rev
+      # Sana oralig'ini tekshirish yoxud barchasini olish
+      date_match = True
+      if start_date and end_date:
+        date_match = start_date <= order_date <= end_date
+      elif start_date:
+        date_match = order_date >= start_date
+      elif end_date:
+        date_match = order_date <= end_date
 
+      order_cost = 0
       if o['items_text']:
         for line in o['items_text'].split('\n'):
           if not line.strip():
@@ -1637,14 +1639,15 @@ def operator_dashboard():
             )
             order_cost += qty * cost_p
 
-            if o['status'] == 'Yetkazildi' and (
-                not selected_date or order_date == selected_date
-            ):
+            if o['status'] == 'Yetkazildi' and date_match:
               cat = prod_cat_map.get(p_name, 'Boshqa')
               cat_stats[cat] = cat_stats.get(cat, 0) + item_sum
           except:
             pass
+
       if o['status'] == 'Yetkazildi':
+        if date_match:
+          daily_sum += order_rev
         total_revenue += order_rev
         total_cost += order_cost
 
@@ -1685,7 +1688,8 @@ def operator_dashboard():
       total_expense=total_expense,
       net_profit=net_profit,
       cat_table_data=cat_table_data,
-      filter_date=selected_date,
+      start_date=start_date,
+      end_date=end_date,
       chart_labels=chart_labels,
       chart_data=chart_data,
       chart_colors=chart_colors,
@@ -1737,134 +1741,67 @@ def print_nakladnoy(order_id=None):
           pass
       orders_data.append((dict(order), items_parsed))
   conn.close()
-  return render_template_string(
-      NAKLADNOY_TEMPLATE, orders_data=orders_data
-  )
+  return render_template_string(NAKLADNOY_TEMPLATE, orders_data=orders_data)
 
 
 @app.route('/add_order', methods=['POST'])
-def add_order():
-  shop_name, agent_name = (
+def web_add_order():
+  shop_name, agent_name, discount = (
       request.form['shop_name'],
       request.form['agent_name'],
+      float(request.form.get('discount', 0) or 0),
   )
-  discount = float(request.form.get('discount', 0) or 0)
-  product_names, quantities = request.form.getlist('product_name'), request.form.getlist(
-      'qty'
-  )
-  today = datetime.now().strftime('%Y-%m-%d %H:%M')
+  product_names = request.form.getlist('product_name')
+  qtys = request.form.getlist('qty')
 
   conn = get_db_connection()
-  total_sum, items_lines = 0, []
+  total_sum, items_text = 0, ''
+  excel_cart_items = []
+
   for i in range(len(product_names)):
     p_name = product_names[i]
     if not p_name:
       continue
-    qty = float(quantities[i])
-    p_info = conn.execute(
-        'SELECT optom_price FROM products WHERE name = ?', (p_name,)
-    ).fetchone()
-    price = p_info['optom_price'] if p_info else 0
-    line_sum = qty * price
-    total_sum += line_sum
-    items_lines.append(f'{p_name} - {qty}x = {line_sum:,.0f} so\'m')
-    conn.execute(
-        'UPDATE products SET stock = stock - ? WHERE name = ?', (qty, p_name)
-    )
+    qty = float(qtys[i] or 1)
 
-  final_sum = max(0, total_sum - discount)
+    prod = conn.execute(
+        'SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)
+    ).fetchone()
+    price = prod['optom_price'] if prod and prod['optom_price'] else 0
+    stock = prod['stock'] if prod and prod['stock'] else 0
+    summa = price * qty
+    total_sum += summa
+
+    items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
+    conn.execute(
+        'UPDATE products SET stock = ? WHERE id = ?', (stock - qty, prod['id'])
+    )
+    excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
+
+  total_sum -= discount
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+  shop_res = conn.execute(
+      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
+  ).fetchone()
+  curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] else 0
+  conn.execute(
+      'UPDATE shops SET debt = ? WHERE name = ?',
+      (curr_debt + total_sum, shop_name),
+  )
+
   cursor = conn.cursor()
   cursor.execute(
-      'INSERT INTO orders (shop_name, agent_name, items_text, total_sum,'
-      " discount, status, date) VALUES (?, ?, ?, ?, ?, 'Yangi', ?)",
+      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, discount, status, date, price_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       (
           shop_name,
           agent_name,
-          '\n'.join(items_lines),
-          final_sum,
+          total_sum,
+          items_text,
           discount,
-          today,
-      ),
-  )
-  conn.commit()
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
-@app.route('/add_stock', methods=['POST'])
-def add_stock():
-  p_select = request.form.get('product_select')
-  qty, cost_price, optom_price = (
-      float(request.form.get('qty', 0)),
-      float(request.form.get('cost_price', 0)),
-      float(request.form.get('optom_price', 0)),
-  )
-  conn = get_db_connection()
-  if p_select == 'NEW':
-    p_name = request.form.get('new_product_name', '').strip()
-    category = request.form.get('new_product_category', 'Boshqa').strip()
-    if p_name:
-      conn.execute(
-          'INSERT OR REPLACE INTO products (name, category, stock, cost_price,'
-          ' optom_price) VALUES (?, ?, ?, ?, ?)',
-          (p_name, category, qty, cost_price, optom_price),
-      )
-  else:
-    conn.execute(
-        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price ='
-        ' ? WHERE name = ?',
-        (qty, cost_price, optom_price, p_select),
-    )
-  conn.commit()
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
-@app.route('/pay_debt', methods=['POST'])
-def pay_debt():
-  shop_id, amount = request.form['shop_id'], float(request.form['amount'])
-  today = datetime.now().strftime('%Y-%m-%d %H:%M')
-  conn = get_db_connection()
-  shop = conn.execute(
-      'SELECT name, debt FROM shops WHERE id = ?', (shop_id,)
-  ).fetchone()
-  if shop:
-    new_debt = max(0.0, shop['debt'] - amount)
-    conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id))
-    conn.execute(
-        'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({shop['name']})", amount, today),
-    )
-    conn.commit()
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
-@app.route('/add_income', methods=['POST'])
-def add_income():
-  conn = get_db_connection()
-  conn.execute(
-      'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-      (
-          request.form['source'],
-          float(request.form['amount']),
-          datetime.now().strftime('%Y-%m-%d %H:%M'),
-      ),
-  )
-  conn.commit()
-  conn.close()
-  return redirect(url_for('operator_dashboard'))
-
-
-@app.route('/add_expense', methods=['POST'])
-def add_expense():
-  conn = get_db_connection()
-  conn.execute(
-      'INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)',
-      (
-          request.form['reason'],
-          float(request.form['amount']),
-          datetime.now().strftime('%Y-%m-%d %H:%M'),
+          'Yangi',
+          bugun,
+          'optom',
       ),
   )
   conn.commit()
@@ -1875,32 +1812,95 @@ def add_expense():
 @app.route('/update_status/<int:order_id>', methods=['POST'])
 def update_status(order_id):
   new_status = request.form['status']
-  today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
-  order = conn.execute(
-      'SELECT shop_name, total_sum, status FROM orders WHERE id = ?',
-      (order_id,),
-  ).fetchone()
-  if order:
-    if new_status == 'Yetkazildi' and order['status'] != 'Yetkazildi':
-      conn.execute(
-          'UPDATE shops SET debt = debt + ? WHERE name = ?',
-          (order['total_sum'], order['shop_name']),
-      )
-    elif order['status'] == 'Yetkazildi' and new_status != 'Yetkazildi':
-      conn.execute(
-          'UPDATE shops SET debt = MAX(0, debt - ?) WHERE name = ?',
-          (order['total_sum'], order['shop_name']),
-      )
+  conn.execute(
+      'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
+  )
+  conn.execute(
+      'INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)',
+      (order_id, new_status, datetime.now().strftime('%Y-%m-%d %H:%M')),
+  )
+  conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/add_stock', methods=['POST'])
+def add_stock():
+  product_select = request.form['product_select']
+  qty = float(request.form['qty'])
+  cost_price = float(request.form['cost_price'])
+  optom_price = float(request.form['optom_price'])
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+  conn = get_db_connection()
+  if product_select == 'NEW':
+    p_name = request.form['new_product_name']
+    category = request.form.get('new_product_category', 'Boshqa')
     conn.execute(
-        'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
+        'INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
+        (p_name, category, qty, cost_price, optom_price, optom_price),
     )
+  else:
+    p_name = product_select
     conn.execute(
-        'INSERT INTO order_status_history (order_id, status, changed_at)'
-        ' VALUES (?, ?, ?)',
-        (order_id, new_status, today),
+        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ? WHERE name = ?',
+        (qty, cost_price, optom_price, p_name),
+    )
+
+  conn.execute(
+      'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, ?, ?)',
+      (p_name, qty, cost_price, bugun),
+  )
+  conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/pay_debt', methods=['POST'])
+def web_pay_debt():
+  shop_id = request.form['shop_id']
+  amount = float(request.form['amount'])
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+  conn = get_db_connection()
+  shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
+  if shop:
+    new_debt = (shop['debt'] or 0) - amount
+    conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id))
+    conn.execute(
+        'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
+        (f"Qarz to'lovi ({shop['name']})", amount, bugun),
     )
     conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/add_income', methods=['POST'])
+def add_income():
+  source, amount = request.form['source'], float(request.form['amount'])
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+  conn = get_db_connection()
+  conn.execute(
+      'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
+      (source, amount, bugun),
+  )
+  conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/add_expense', methods=['POST'])
+def add_expense():
+  reason, amount = request.form['reason'], float(request.form['amount'])
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+  conn = get_db_connection()
+  conn.execute(
+      'INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)',
+      (reason, amount, bugun),
+  )
+  conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
@@ -1908,43 +1908,34 @@ def update_status(order_id):
 @app.route('/export_excel')
 def export_excel():
   conn = get_db_connection()
-  orders_df = pd.read_sql_query(
-      'SELECT id, shop_name, agent_name, items_text, total_sum, discount,'
-      ' status, date FROM orders',
-      conn,
-  )
-  products_df = pd.read_sql_query(
-      'SELECT name, category, stock, cost_price, optom_price FROM products',
-      conn,
-  )
-  shops_df = pd.read_sql_query(
-      'SELECT name, phone, region, landmark, debt, visit_days, inventory FROM'
-      ' shops',
-      conn,
-  )
+  orders = conn.execute('SELECT * FROM orders').fetchall()
+  shops = conn.execute('SELECT * FROM shops').fetchall()
+  products = conn.execute('SELECT * FROM products').fetchall()
   conn.close()
 
   output = io.BytesIO()
   with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    orders_df.to_excel(writer, sheet_name='Buyurtmalar', index=False)
-    products_df.to_excel(writer, sheet_name='Ombor', index=False)
-    shops_df.to_excel(writer, sheet_name="Do'konlar", index=False)
+    pd.DataFrame([dict(o) for o in orders]).to_excel(
+        writer, sheet_name='Buyurtmalar', index=False
+    )
+    pd.DataFrame([dict(s) for s in shops]).to_excel(
+        writer, sheet_name="Do'konlar", index=False
+    )
+    pd.DataFrame([dict(p) for p in products]).to_excel(
+        writer, sheet_name='Mahsulotlar', index=False
+    )
   output.seek(0)
   return send_file(
-      output, download_name='xoji_aka_erp_report.xlsx', as_attachment=True
+      output,
+      attachment_filename='XojiAka_Factory_Data.xlsx',
+      as_attachment=True,
+      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
-
-
-# --- ASOSIY ISHGA TUSHIRISH ---
-def run_telegram_bot():
-  bot.remove_webhook()
-  bot.infinity_polling(skip_pending=True)
 
 
 if __name__ == '__main__':
   init_web_db()
-
-  bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-  bot_thread.start()
-
+  threading.Thread(
+      target=lambda: bot.infinity_polling(skip_pending=True), daemon=True
+  ).start()
   app.run(host='0.0.0.0', port=5000, debug=False)
