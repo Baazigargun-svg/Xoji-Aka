@@ -3,7 +3,6 @@ import io
 import threading
 import os
 import sqlite3
-import threading
 from flask import (
     Flask,
     redirect,
@@ -116,6 +115,34 @@ def init_web_db():
       " 'Admin', '', 'admin')",
       (ADMIN_ID,),
   )
+
+  # --- EXCEL DAN BOSHLANG'ICH DO'KONLAR VA MAHSULOTLARNI BAZAGA QO'SHISH ---
+  # Do'konlar bazasi (klent baza_2.xlsx ma'lumotlari asosida)
+  initial_shops = [
+      ("Ziyoda opa", "+998901234567", 0, "Chilonzor", "Makro yonida", "D, Ch, J", ""),
+      ("Anvar aka", "+998933215476", 0, "Yunusobod", "Universal", "S, P", "1 ta Xolodilnik"),
+      ("Dilshod", "+998997654321", 0, "Sergeli", "Bozor ichida", "D, S, Ch, P, J, Sh, Ya", "")
+  ]
+  for s_name, s_phone, s_debt, s_region, s_landmark, s_visit, s_inv in initial_shops:
+    cursor.execute(
+        '''INSERT OR IGNORE INTO shops (name, phone, debt, visit_days, region, landmark, inventory) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (s_name, s_phone, s_debt, s_visit, s_region, s_landmark, s_inv)
+    )
+
+  # Mahsulotlar bazasi (mahsulotlar ro'yxati_2.xlsx ma'lumotlari asosida)
+  initial_products = [
+      ("Suv 0.5l", "Ichimliklar", 100, 2000, 2500, 3000),
+      ("Suv 1.5l", "Ichimliklar", 80, 3500, 4200, 5000),
+      ("Cola 1l", "Ichimliklar", 50, 6000, 7500, 9000),
+      ("Non", "Oziq-ovqat", 200, 2500, 3000, 3500)
+  ]
+  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana in initial_products:
+    cursor.execute(
+        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price) 
+           VALUES (?, ?, ?, ?, ?, ?)''',
+        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana)
+    )
 
   conn.commit()
   conn.close()
@@ -913,9 +940,6 @@ def finish_order(message):
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  # Eslatma: Buyurtma yaratilganda (hali yetkazilmagan paytda) do'kon qarziga qo'shilmaydi.
-  # Qarz faqat status "Yetkazildi" ga o'zgarganda qo'shiladi.
-
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
   ).fetchone()
@@ -1156,7 +1180,6 @@ HTML_TEMPLATE = """
                 <a href="/logout" class="btn btn-sm btn-outline-danger fw-bold"><i class="bi bi-box-arrow-right me-1"></i>Chiqish</a>
                 <a href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Excelga Yuklab Olish</a>
                 
-                <!-- SANA ORALIQ (QACHONDAN QACHONGACHA) FILTRI -->
                 <form method="GET" action="/" class="d-flex align-items-center gap-1 m-0 bg-light p-1 rounded border">
                     <span class="text-muted small px-1">Dan:</span>
                     <input type="date" name="start_date" value="{{ start_date }}" class="form-control form-control-sm" style="width: 130px;">
@@ -1169,7 +1192,6 @@ HTML_TEMPLATE = """
         </div>
         <div class="p-4">
             <div class="tab-content">
-                <!-- BOSH PANEL -->
                 <div class="tab-pane fade show active" id="tab-dashboard">
                     <div class="row g-4 mb-4">
                         <div class="col-md-4">
@@ -1221,7 +1243,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
-                <!-- BUYURTMALAR -->
                 <div class="tab-pane fade" id="tab-orders">
                     <div class="row g-4">
                         <div class="col-md-4">
@@ -1318,7 +1339,6 @@ HTML_TEMPLATE = """
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <!-- BUYURTMANI TAHRIRLASH TUGMASI (Faqat "Yangi" holatidagina ishlaydi!) -->
                                                     {% if o['status'] == 'Yangi' %}
                                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick="openEditOrderModal('{{ o['id'] }}', '{{ o['shop_name'] | e }}', {{ o['discount'] }})"><i class="bi bi-pencil"></i> Tahrir</button>
                                                     {% else %}
@@ -1347,7 +1367,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
-                <!-- SKLAD -->
                 <div class="tab-pane fade" id="tab-inventory">
                     <div class="row g-4 mb-4">
                         <div class="col-md-12">
@@ -1408,7 +1427,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
-                <!-- DO'KONLAR -->
                 <div class="tab-pane fade" id="tab-clients">
                     <div class="row g-4 mb-4">
                         <div class="col-md-12">
@@ -1480,7 +1498,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
-                <!-- KASSA -->
                 <div class="tab-pane fade" id="tab-kassa">
                     <div class="row g-4">
                         <div class="col-md-6">
@@ -1505,7 +1522,6 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
-                <!-- HISOBOT -->
                 <div class="tab-pane fade" id="tab-reports">
                     <div class="card-glass p-4 mb-4">
                         <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i>Moliyaviy Hisobot</h5>
@@ -1522,7 +1538,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- DO'KONNI TAHRIRLASH MODALI -->
 <div class="modal fade" id="editShopModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1548,7 +1563,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- BUYURTMANI TAHRIRLASH MODALI -->
 <div class="modal fade" id="editOrderModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1576,7 +1590,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- MAHSULOTNI TAHRIRLASH MODALI -->
 <div class="modal fade" id="editProductModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1774,7 +1787,6 @@ LOGIN_TEMPLATE = """
 """
 
 
-# --- FLASK ROUTELARI ---
 @app.before_request
 def require_login():
   if request.endpoint not in ['login', 'static'] and not session.get(
@@ -2031,7 +2043,6 @@ def web_add_order():
   return redirect(url_for('operator_dashboard'))
 
 
-# --- BUYURTMANI TAHRIRLASH ROUTE (Faqat 'Yangi' holatda bo'lsa) ---
 @app.route('/update_order/<int:order_id>', methods=['POST'])
 def update_order(order_id):
   conn = get_db_connection()
@@ -2044,7 +2055,6 @@ def update_order(order_id):
   new_shop_name = request.form['shop_name']
   new_discount = float(request.form.get('discount', 0) or 0)
 
-  # Eski mahsulot miqdorlarini skladga qaytarib qo'shamiz
   for line in (order['items_text'] or '').split('\n'):
     if not line.strip():
       continue
@@ -2061,10 +2071,9 @@ def update_order(order_id):
     except:
       pass
 
-  # Yangi ma'lumotlar bilan summani va skladni qayta hisoblaymiz (soddalashtirilgan holda do'kon va skidka o'zgartirildi)
   old_total_items_sum = (
       order['total_sum'] + (order['discount'] or 0)
-  )  # Asosiy mahsulotlar summasi
+  )
   new_total_sum = old_total_items_sum - new_discount
 
   conn.execute(
@@ -2076,7 +2085,6 @@ def update_order(order_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# --- STATUS O'ZGARTIRISH VA QARZNI HISoblash (Yetkazildi bo'lsagina qarzga qo'shiladi) ---
 @app.route('/update_status/<int:order_id>', methods=['POST'])
 def update_status(order_id):
   new_status = request.form['status']
@@ -2088,7 +2096,6 @@ def update_status(order_id):
     shop_name = order['shop_name']
     order_sum = order['total_sum'] or 0
 
-    # Agar status "Yetkazildi" ga o'zgayotgan bo'lsa va oldin yetkazilmagan bo'lsa -> do'kon qarziga qo'shamiz
     if new_status == 'Yetkazildi' and old_status != 'Yetkazildi':
       shop = conn.execute(
           'SELECT debt FROM shops WHERE name = ?', (shop_name,)
@@ -2099,7 +2106,6 @@ def update_status(order_id):
           (current_debt + order_sum, shop_name),
       )
 
-    # Agar oldin "Yetkazildi" bo'lib turib, boshqa statusga (masalan Bekor yoki Yangi) o'zgarsa -> do'kon qarzidan ayirib tashlaymiz
     elif old_status == 'Yetkazildi' and new_status != 'Yetkazildi':
       shop = conn.execute(
           'SELECT debt FROM shops WHERE name = ?', (shop_name,)
@@ -2205,28 +2211,21 @@ def pay_debt_web():
   return redirect(url_for('operator_dashboard'))
 
 
-# --- (Sizdagi o'rtadagi barcha routelar, funksiyalar, shu jumladan pay_debt_web shu yerda o'z joyida turadi) ---
-
-
-# Botni alohida oqimda ishga tushirish uchun funksiya
 def run_bot():
-    while True:
-        try:
-            bot.remove_webhook()
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"Bot polling xatosi: {e}")
+  while True:
+    try:
+      bot.remove_webhook()
+      bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except Exception as e:
+      print(f"Bot polling xatosi: {e}")
 
 
-# Faylning ENG OXIRIDAGI qismni mana shunga o'zgartirasiz:
 if __name__ == '__main__':
-    init_web_db()
-    
-    # Botni alohida oqimda ishga tushiramiz
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
+  init_web_db()
 
-    # Flask serverni ishga tushiramiz (Render uchun portni avtomatik oladi)
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+  bot_thread = threading.Thread(target=run_bot)
+  bot_thread.daemon = True
+  bot_thread.start()
+
+  port = int(os.environ.get('PORT', 5000))
+  app.run(host='0.0.0.0', port=port, debug=False)
