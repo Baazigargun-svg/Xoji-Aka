@@ -2204,6 +2204,31 @@ def pay_debt_web():
   return redirect(url_for('operator_dashboard'))
 
 
+# Faylning eng boshiga (agar yo'q bo'lsa) bularni ham qo'shib qo'yasiz:
+import threading
+import os
+
+# --- (Sizdagi o'rtadagi barcha routelar, funksiyalar, shu jumladan pay_debt_web shu yerda o'z joyida turadi) ---
+
+
+# Botni alohida oqimda ishga tushirish uchun funksiya
+def run_bot():
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Bot polling xatosi: {e}")
+
+
+# Faylning ENG OXIRIDAGI qismni mana shunga o'zgartirasiz:
 if __name__ == '__main__':
-  init_web_db()
-  app.run(host='0.0.0.0', port=5000, debug=True)
+    init_web_db()
+    
+    # Botni alohida oqimda ishga tushiramiz
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+
+    # Flask serverni ishga tushiramiz (Render uchun portni avtomatik oladi)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
