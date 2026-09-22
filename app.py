@@ -1,5 +1,6 @@
 from datetime import datetime
 import io
+import threading
 import os
 import sqlite3
 import threading
@@ -2203,10 +2204,6 @@ def pay_debt_web():
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
-
-# Faylning eng boshiga (agar yo'q bo'lsa) bularni ham qo'shib qo'yasiz:
-import threading
-import os
 
 # --- (Sizdagi o'rtadagi barcha routelar, funksiyalar, shu jumladan pay_debt_web shu yerda o'z joyida turadi) ---
 
