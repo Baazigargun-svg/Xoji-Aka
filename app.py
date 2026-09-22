@@ -2212,6 +2212,7 @@ def pay_debt_web():
 def run_bot():
     while True:
         try:
+            bot.remove_webhook()
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
         except Exception as e:
             print(f"Bot polling xatosi: {e}")
