@@ -2431,20 +2431,20 @@ def export_excel():
 
 
 def run_bot():
-  while True:
-    try:
-      bot.remove_webhook()
-      bot.infinity_polling(timeout=60, long_polling_timeout=60)
-    except Exception as e:
-      print(f"Bot polling xatosi: {e}")
+    while True:
+        try:
+            bot.remove_webhook()
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Bot polling xatosi: {e}")
 
 
 if __name__ == '__main__':
-  init_web_db()
+    init_web_db()
 
-  bot_thread = threading.Thread(target=run_bot)
-  bot_thread.daemon = True
-  bot_thread.start()
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
 
-  port = int(os.environ.get('PORT', 5000))
-  app.run(host='0.0.0.0', port=port, debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
