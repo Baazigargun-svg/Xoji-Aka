@@ -111,104 +111,162 @@ def init_web_db():
       pass
 
   cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS users (tg_id INTEGER PRIMARY KEY, name TEXT, phone TEXT, role TEXT DEFAULT 'pending')'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS expenses 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, reason TEXT, amount REAL, date TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS incomes 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, amount REAL, date TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS product_incomes 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, product_name TEXT, qty REAL, cost_price REAL, date TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS orders 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, agent_name TEXT, items_text TEXT, total_sum REAL, discount REAL DEFAULT 0, status TEXT, date TEXT, price_type TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS order_status_history 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, status TEXT, changed_at TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS products 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, category TEXT DEFAULT 'Boshqa', stock REAL DEFAULT 0, cost_price REAL DEFAULT 0, optom_price REAL DEFAULT 0, chakana_price REAL DEFAULT 0)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS shops 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '')'''
+  )
+
+  migrations = [
+      (
+          "ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Boshqa'",
+          "category",
+      ),
+      ("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0", "cost_price"),
+      (
+          "ALTER TABLE products ADD COLUMN optom_price REAL DEFAULT 0",
+          "optom_price",
+      ),
+      (
+          "ALTER TABLE products ADD COLUMN chakana_price REAL DEFAULT 0",
+          "chakana_price",
+      ),
+      ("ALTER TABLE products ADD COLUMN stock REAL DEFAULT 0", "stock"),
+      ("ALTER TABLE shops ADD COLUMN visit_days TEXT DEFAULT ''", "visit_days"),
+      ("ALTER TABLE shops ADD COLUMN region TEXT DEFAULT ''", "region"),
+      ("ALTER TABLE shops ADD COLUMN landmark TEXT DEFAULT ''", "landmark"),
+      ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
+      ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
+      ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
+  ]
+
+  for query, col in migrations:
+    try:
+      cursor.execute(query)
+    except:
+      pass
+
+  cursor.execute(
       "INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?,"
       " 'Admin', '', 'admin')",
       (ADMIN_ID,),
   )
 
-  # --- EXCEL DAN BOSHLANG'ICH DO'KONLAR VA MAHSULOTLARNI BAZAGA QO'SHISH ---
-  # Do'konlar bazasi (klent baza_2.xlsx ma'lumotlari asosida)
   initial_shops = [
-      ('Sherzod market', '', 'Uzgazoil qatori'),
-      ('Qayumov Kamol', '', 'Murch boboga yetmasdan'),
-      ('Akbar aka', '', 'Bekat murch bobo'),
-      ('Pub house', '', 'Pub house'),
-      ('Chapayev roparasi', '', 'Chapayev roparasi'),
-      ('Toshpoʻlat aka', '', 'Uchrashuv yoni'),
-      ('Abdulfayz bekat', '', ''),
-      ('Dilorom', '', 'Tutzor'),
-      ('Joʻrabek aka', '', 'Anorcha tagi'),
-      ('Vohas', '', 'Vohas'),
-      ('Oʻzbegim market', '', 'Davr bank yoni'),
-      ('Pokiza market', '', 'Muz saroy yoni'),
-      ('Soxibkor doʻstlik', '', ''),
-      ('Feruza non sex', '', 'Nigoh non sexi yoni'),
-      ('South brothers', '', 'Doktor A qatori'),
-      ('Gulmira opa', '', 'Cola orqasi'),
-      ('Taniqulov Oʻktam', '', ''),
-      ('Abdulloh market', '', 'Feredun café'),
-      ('23-market', '', '23-sartarosh yoni'),
-      ('Cola market', '', 'South brothersga yetmay'),
-      ('Muxlis Market', '', 'Movaro'),
-      ('Anjir Market', '', 'Movaro'),
-      ('Sevimli Market', '', 'Yashil dunyo'),
-      ('Abbos market', '', 'Yashil dunyo'),
-      ('Dilya opa', '', 'Yashil dunyo'),
-      ('Sanjar aka', '', 'Yashil dunyo'),
-      ('Nur market', '', 'Yashil dunyo'),
-      ('547 market', '', 'Yashil dunyo'),
-      ('Shox market', '', 'Yashil dunyo'),
-      ('Makro market', '', 'Yashil dunyo'),
-      ('Xusan bobo market', '', 'Yashil dunyo'),
-      ('Fresh market umid aka', '', 'Movaro'),
-      ('Pul hokim', '', 'Adliya yoʻli'),
-      ('Hoji ona market', '', 'Med yoni'),
-      ('Chinor market', '', 'Med yoni'),
-      ('16 market', '', 'Begoyim roʻparasi'),
-      ('Lada yoni', '', 'Lada yoni'),
-      ('Alibek aka', '', 'Sohil pastlik'),
-      ('4 aka-uka', '', 'sohil'),
-      ('Rayxon opa sohil', '', 'Guliston ma-si'),
-      ('Muhabbat opa', '', 'Boyqishloq'),
-      ('Moyka yoni', '', 'Moyka yoni'),
-      ('Malika yoni optom', '', 'Malika yoni optom'),
-      ('AR market', '', 'Abdurashid market'),
-      ('Kam-kam Market', '', '23-dom yoni'),
-      ('Osiyo tagi', '', ''),
-      ('Nigora opa', '', 'Eski pioner oldi'),
-      ('Sherbek aka/fresh M', '', 'Best roʻparasi'),
-      ('Otabek aka', '', 'antena tagi'),
-      ('Universal Market', '', 'Lola kafe yoni'),
-      ('Aka-Uka Market', '', 'Masjid yoni'),
-      ('Oila Market', '', 'zilyonni yoʻli'),
-      ('Boxo market', '', 'zilyonni yoʻli'),
-      ('Otabek zapchast M', '', 'zilyonni yoʻli'),
-      ('Maya market', '', 'Gostsatndart yoni'),
-      ('Umida opa', '', 'Mashhura yoʻli'),
-      ('Darband city', '', 'Vokzal yoni'),
-      ('Otajon market', '', 'Tisudan keyin'),
-      ('Barakali market', '', 'Tisu yoni'),
-      ('Asilabonu', '', 'Boysun bekati yoni'),
-      ('Norqulova Nargiza', '', 'Hayit ala uyi taraf'),
-      ('Sherzod aka', '', 'Harbiy doʻkon'),
+      ('Sherzod market', '', 0, '', 'Uzgazoil qatori', '', ''),
+      ('Qayumov Kamol', '', 0, '', 'Murch boboga yetmasdan', '', ''),
+      ('Akbar aka', '', 0, '', 'Bekat murch bobo', '', ''),
+      ('Pub house', '', 0, '', 'Pub house', '', ''),
+      ('Chapayev roparasi', '', 0, '', 'Chapayev roparasi', '', ''),
+      ('Toshpoʻlat aka', '', 0, '', 'Uchrashuv yoni', '', ''),
+      ('Abdulfayz bekat', '', 0, '', '', '', ''),
+      ('Dilorom', '', 0, '', 'Tutzor', '', ''),
+      ('Joʻrabek aka', '', 0, '', 'Anorcha tagi', '', ''),
+      ('Vohas', '', 0, '', 'Vohas', '', ''),
+      ('Oʻzbegim market', '', 0, '', 'Davr bank yoni', '', ''),
+      ('Pokiza market', '', 0, '', 'Muz saroy yoni', '', ''),
+      ('Soxibkor doʻstlik', '', 0, '', '', '', ''),
+      ('Feruza non sex', '', 0, '', 'Nigoh non sexi yoni', '', ''),
+      ('South brothers', '', 0, '', 'Doktor A qatori', '', ''),
+      ('Gulmira opa', '', 0, '', 'Cola orqasi', '', ''),
+      ('Taniqulov Oʻktam', '', 0, '', '', '', ''),
+      ('Abdulloh market', '', 0, '', 'Feredun café', '', ''),
+      ('23-market', '', 0, '', '23-sartarosh yoni', '', ''),
+      ('Cola market', '', 0, '', 'South brothersga yetmay', '', ''),
+      ('Muxlis Market', '', 0, '', 'Movaro', '', ''),
+      ('Anjir Market', '', 0, '', 'Movaro', '', ''),
+      ('Sevimli Market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Abbos market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Dilya opa', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Sanjar aka', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Nur market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('547 market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Shox market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Makro market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Xusan bobo market', '', 0, '', 'Yashil dunyo', '', ''),
+      ('Fresh market umid aka', '', 0, '', 'Movaro', '', ''),
+      ('Pul hokim', '', 0, '', 'Adliya yoʻli', '', ''),
+      ('Hoji ona market', '', 0, '', 'Med yoni', '', ''),
+      ('Chinor market', '', 0, '', 'Med yoni', '', ''),
+      ('16 market', '', 0, '', 'Begoyim roʻparasi', '', ''),
+      ('Lada yoni', '', 0, '', 'Lada yoni', '', ''),
+      ('Alibek aka', '', 0, '', 'Sohil pastlik', '', ''),
+      ('4 aka-uka', '', 0, '', 'sohil', '', ''),
+      ('Rayxon opa sohil', '', 0, '', 'Guliston ma-si', '', ''),
+      ('Muhabbat opa', '', 0, '', 'Boyqishloq', '', ''),
+      ('Moyka yoni', '', 0, '', 'Moyka yoni', '', ''),
+      ('Malika yoni optom', '', 0, '', 'Malika yoni optom', '', ''),
+      ('AR market', '', 0, '', 'Abdurashid market', '', ''),
+      ('Kam-kam Market', '', 0, '', '23-dom yoni', '', ''),
+      ('Osiyo tagi', '', 0, '', '', '', ''),
+      ('Nigora opa', '', 0, '', 'Eski pioner oldi', '', ''),
+      ('Sherbek aka/fresh M', '', 0, '', 'Best roʻparasi', '', ''),
+      ('Otabek aka', '', 0, '', 'antena tagi', '', ''),
+      ('Universal Market', '', 0, '', 'Lola kafe yoni', '', ''),
+      ('Aka-Uka Market', '', 0, '', 'Masjid yoni', '', ''),
+      ('Oila Market', '', 0, '', 'zilyonni yoʻli', '', ''),
+      ('Boxo market', '', 0, '', 'zilyonni yoʻli', '', ''),
+      ('Otabek zapchast M', '', 0, '', 'zilyonni yoʻli', '', ''),
+      ('Maya market', '', 0, '', 'Gostsatndart yoni', '', ''),
+      ('Umida opa', '', 0, '', 'Mashhura yoʻli', '', ''),
+      ('Darband city', '', 0, '', 'Vokzal yoni', '', ''),
+      ('Otajon market', '', 0, '', 'Tisudan keyin', '', ''),
+      ('Barakali market', '', 0, '', 'Tisu yoni', '', ''),
+      ('Asilabonu', '', 0, '', 'Boysun bekati yoni', '', ''),
+      ('Norqulova Nargiza', '', 0, '', 'Hayit ala uyi taraf', '', ''),
+      ('Sherzod aka', '', 0, '', 'Harbiy doʻkon', '', ''),
   ]
-  for s_name, s_phone, s_debt, s_region, s_landmark, s_visit, s_inv in initial_shops:
+  for s_name, s_phone, s_debt, s_visit, s_region, s_landmark, s_inv in initial_shops:
     cursor.execute(
         '''INSERT OR IGNORE INTO shops (name, phone, debt, visit_days, region, landmark, inventory) 
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (s_name, s_phone, s_debt, s_visit, s_region, s_landmark, s_inv)
     )
 
-  # Mahsulotlar bazasi (mahsulotlar ro'yxati_2.xlsx ma'lumotlari asosida)
   initial_products = [
-      ('Pelmen /300 gr', 0.0, 14000.0),
-      ('Pelmen /500 gr', 0.0, 24000.0),
-      ('Pelmen rasepnoy /kg', 0.0, 46000.0),
-      ('Teftel /300 gr', 0.0, 23000.0),
-      ('Pelmen ossarti /500 gr', 0.0, 30000.0),
-      ('Pelmen ossarti /300 gr', 0.0, 20000.0),
-      ('Golubtsi /500 gr', 0.0, 25000.0),
-      ('Tok doʻlma /300 gr', 11000.0, 25000.0),
-      ('Karam doʻlma /300 gr', 11000.0, 25000.0),
-      ('Somsa kesilgan /800 gr', 6000.0, 17000.0),
-      ('Oʻrama xamir', 6000.0, 17000.0),
-      ('KFC', 0.0, 29000.0),
-      ('KFC Gulim', 0.0, 29000.0),
-      ('Osh masalliq 500 gr', 6000.0, 13000.0),
-      ('Osh masalliq 1 kg', 7000.0, 15000.0),
-      ('Lagʻmon', 2000.0, 6000.0),
-      ('Kotlet', 11000.0, 25000.0),
-      ('Lavash hamiri', 3800.0, 7000.0),
+      ('Pelmen /300 gr', 'Boshqa', 1000, 6200, 14000.0, 14000.0),
+      ('Pelmen /500 gr', 'Boshqa', 1000, 9900, 24000.0, 24000.0),
+      ('Pelmen rasepnoy /kg', 'Boshqa', 1000, 19500, 46000.0, 46000.0),
+      ('Teftel /300 gr', 'Boshqa', 1000, 12000, 23000.0, 23000.0),
+      ('Pelmen ossarti /500 gr', 'Boshqa', 1000, 18000, 30000.0, 30000.0),
+      ('Pelmen ossarti /300 gr', 'Boshqa', 1000, 11500, 20000.0, 20000.0),
+      ('Golubtsi /500 gr', 'Boshqa', 1000, 14000, 25000.0, 25000.0),
+      ('Tok doʻlma /300 gr', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
+      ('Karam doʻlma /300 gr', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
+      ('Somsa kesilgan /800 gr', 'Boshqa', 1000, 6000.0, 17000.0, 17000.0),
+      ('Oʻrama xamir', 'Boshqa', 1000, 6000.0, 17000.0, 17000.0),
+      ('KFC', 'Boshqa', 1000, 27500, 30000.0, 30000.0),
+      ('KFC Gulim', 'Boshqa', 1000.0, 15000, 30000.0, 30000.0),
+      ('Osh masalliq 500 gr', 'Boshqa', 1000, 6000.0, 13000.0, 13000.0),
+      ('Osh masalliq 1 kg', 'Boshqa', 1000, 7000.0, 15000.0, 15000.0),
+      ('Lagʻmon', 'Boshqa', 10000, 2000.0, 6000.0, 6000.0),
+      ('Kotlet', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
+      ('Lavash hamiri', 'Boshqa', 1000, 3800.0, 7000.0, 7000.0),
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana in initial_products:
     cursor.execute(
