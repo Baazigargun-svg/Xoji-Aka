@@ -117,9 +117,9 @@ def init_web_db():
       (ADMIN_ID,),
   )
 
-  # Doimiy agentlarni kodga qo'shish
+  # Doimiy xodimlarni kodga qo'shish (Qoraboyev Sirojiddin - agent va sex, Qoraboyeva Charos - agent)
   initial_agents = [
-      (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent"),
+      (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
@@ -343,11 +343,14 @@ def get_main_menu(role):
         types.KeyboardButton("💰 Qarz/To'lov yozish"),
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
     )
+    # Agar foydalanuvchida sex roli ham bo'lsa, menyuga o'tish tugmasini qo'shamiz
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   elif role == 'sex':
     markup.row(
         types.KeyboardButton('📦 Skladga Mahsulot Kirim Qilish'),
         types.KeyboardButton('📋 Ombordagi Qoldiqlar'),
     )
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   else:
     markup.add(types.KeyboardButton("📝 Ro'yxatdan o'tish"))
   return markup
@@ -375,6 +378,18 @@ def start_command(message):
           message.chat.id,
           f"Salom {name}. So'rovingiz admin tasdig'ini kutyapti.",
       )
+    elif ',' in role:
+      # Agar bir nechta roli bo'lsa (masalan: agent,sex), rol tanlash klaviaturasi chiqadi
+      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+      if 'agent' in role:
+        markup.add(types.KeyboardButton('👤 Agent rejimi'))
+      if 'sex' in role:
+        markup.add(types.KeyboardButton('🏭 Sex rejimi'))
+      bot.send_message(
+          message.chat.id,
+          f'Salom {name}! Iltimos, ish rejimini tanlang:',
+          reply_markup=markup,
+      )
     else:
       bot.send_message(
           message.chat.id,
@@ -387,6 +402,50 @@ def start_command(message):
         "Assalomu alaykum! Tizimga xush kelibsiz. Davom etish uchun"
         " ro'yxatdan o'ting.",
         reply_markup=get_main_menu('guest'),
+    )
+
+
+@bot.message_handler(
+    func=lambda message: message.text
+    in ['👤 Agent rejimi', '🏭 Sex rejimi', '🔄 Rolni almashtirish (Sex / Agent)']
+)
+def switch_role_menu(message):
+  tg_id = message.from_user.id
+  conn = get_db_connection()
+  user = conn.execute(
+      'SELECT role, name FROM users WHERE tg_id = ?', (tg_id,)
+  ).fetchone()
+  conn.close()
+
+  if not user:
+    return
+
+  role_str = user['role']
+  if message.text == '👤 Agent rejimi' or (
+      'agent' in role_str and 'sex' in role_str and message.text != '🏭 Sex rejimi'
+  ):
+    # Agar almashtirish so'ralsa va ikkalasi bo'lsa
+    if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+      markup.add(
+          types.KeyboardButton('👤 Agent rejimi'),
+          types.KeyboardButton('🏭 Sex rejimi'),
+      )
+      bot.send_message(
+          message.chat.id, 'Qaysi rejimga oʻtmoqchisiz?', reply_markup=markup
+      )
+      return
+
+    bot.send_message(
+        message.chat.id,
+        '🛒 Agent rejimiga oʻtdingiz.',
+        reply_markup=get_main_menu('agent'),
+    )
+  elif message.text == '🏭 Sex rejimi':
+    bot.send_message(
+        message.chat.id,
+        '🏭 Sex rejimiga oʻtdingiz.',
+        reply_markup=get_main_menu('sex'),
     )
 
 
@@ -404,6 +463,7 @@ def sex_income_start(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for p in prods:
     markup.add(types.KeyboardButton(p['name']))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(
       message.chat.id, 'Kirim qilinadigan mahsulotni tanlang:', reply_markup=markup
   )
@@ -411,6 +471,9 @@ def sex_income_start(message):
 
 
 def sex_income_get_product(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+    switch_role_menu(message)
+    return
   user_steps[message.from_user.id] = {'product_name': message.text}
   msg = bot.send_message(
       message.chat.id,
@@ -695,7 +758,11 @@ def admin_other_sections(message):
     inline_kb = types.InlineKeyboardMarkup()
     text = '<b>👥 Agentlar va Sex xodimlari:</b>\n\n'
     for a in agents:
-      status = '✅ Faol' if a['role'] in ['agent', 'sex'] else '⏳ Kutilmoqda'
+      status = (
+          '✅ Faol'
+          if any(r in a['role'] for r in ['agent', 'sex'])
+          else '⏳ Kutilmoqda'
+      )
       text += f"👤 {a['name']} ({a['phone']}) - [{a['role']}] - {status}\n"
       if a['role'] == 'pending':
         inline_kb.add(
@@ -1069,11 +1136,15 @@ def start_order(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for s in shops:
     markup.add(types.KeyboardButton(s['name']))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
   bot.register_next_step_handler(msg, choose_price_type)
 
 
 def choose_price_type(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+    switch_role_menu(message)
+    return
   user_steps[message.from_user.id] = {
       'shop_name': message.text,
       'cart': {},
@@ -1083,6 +1154,7 @@ def choose_price_type(message):
       types.KeyboardButton('💰 Ulgurji (Optom)'),
       types.KeyboardButton('🛍 Chakana'),
   )
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(
       message.chat.id, 'Narx turini tanlang:', reply_markup=markup
   )
@@ -1090,6 +1162,9 @@ def choose_price_type(message):
 
 
 def show_products_to_agent(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+    switch_role_menu(message)
+    return
   p_type = 'optom' if 'Ulgurji' in message.text else 'chakana'
   user_steps[message.from_user.id]['price_type'] = p_type
   send_product_list_menu(message)
@@ -1103,6 +1178,7 @@ def send_product_list_menu(message):
   for p in prods:
     markup.add(types.KeyboardButton(p['name']))
   markup.add(types.KeyboardButton('✅ Buyurtmani yakunlash'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(
       message.chat.id, 'Mahsulotni tanlang:', reply_markup=markup
   )
@@ -1110,6 +1186,9 @@ def send_product_list_menu(message):
 
 
 def ask_quantity(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+    switch_role_menu(message)
+    return
   if message.text == '✅ Buyurtmani yakunlash':
     finish_order(message)
     return
@@ -1213,7 +1292,6 @@ def finish_order(message):
   if os.path.exists(excel_file):
     os.remove(excel_file)
 
-  # Guruhga hem nakladnoy hujjat, ham to'liq matn shaklida xabar yuborish
   try:
     group_text = (
         f"📝 <b>YANGI BUYURTMA (#{order_id})</b>\n"
@@ -1299,11 +1377,15 @@ def pay_debt_start(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for s in shops:
     markup.add(types.KeyboardButton(s['name']))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
   bot.register_next_step_handler(msg, ask_payment_amount)
 
 
 def ask_payment_amount(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+    switch_role_menu(message)
+    return
   shop_name = message.text
   msg = bot.send_message(
       message.chat.id,
@@ -1748,6 +1830,7 @@ HTML_TEMPLATE = """
                                         <select name="role" class="form-select">
                                             <option value="agent">Agent</option>
                                             <option value="sex">Sex xodimi</option>
+                                            <option value="agent,sex">Agent va Sex xodimi (Ikkalas ham)</option>
                                         </select>
                                     </div>
                                     <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
@@ -1768,7 +1851,8 @@ HTML_TEMPLATE = """
                                                 <td>{{ a['phone'] }}</td>
                                                 <td><code>{{ a['tg_id'] }}</code></td>
                                                 <td>
-                                                    {% if a['role'] == 'agent' %}<span class="badge bg-success">Faol Agent</span>
+                                                    {% if 'agent' in a['role'] and 'sex' in a['role'] %}<span class="badge bg-primary">Agent va Sex</span>
+                                                    {% elif a['role'] == 'agent' %}<span class="badge bg-success">Faol Agent</span>
                                                     {% elif a['role'] == 'sex' %}<span class="badge bg-info text-dark">Sex xodimi</span>
                                                     {% elif a['role'] == 'pending' %}<span class="badge bg-warning text-dark">Tasdiq kutyapti</span>
                                                     {% else %}<span class="badge bg-secondary">{{ a['role'] }}</span>{% endif %}
@@ -2105,42 +2189,33 @@ LOGIN_TEMPLATE = """
     <meta charset="UTF-8">
     <title>Kirish</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>body { background: #0f172a; height: 100vh; display: flex; align-items: center; justify-content: center; }</style>
+    <style>
+        body { background: #0f172a; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: #ffffff; padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+    </style>
 </head>
 <body>
-    <div class="card p-4 shadow" style="width: 100%; max-width: 400px; border-radius: 16px;">
-        <h4 class="text-center mb-3 fw-bold">Xoji Aka ERP</h4>
-        {% if error %}<div class="alert alert-danger py-1 small text-center">{{ error }}</div>{% endif %}
-        <form method="POST">
-            <div class="mb-3"><label class="form-label small fw-bold">Login:</label><input type="text" name="username" class="form-control" required></div>
-            <div class="mb-3"><label class="form-label small fw-bold">Parol:</label><input type="password" name="password" class="form-control" required></div>
-            <button type="submit" class="btn btn-primary w-100 fw-bold">Kirish</button>
-        </form>
-    </div>
+<div class="login-card">
+    <h3 class="fw-bold text-center mb-4 text-dark">Xoji Aka ERP</h3>
+    {% if error %}<div class="alert alert-danger py-2 small">{{ error }}</div>{% endif %}
+    <form method="POST">
+        <div class="mb-3"><label class="form-label small fw-bold">Parol:</label><input type="password" name="password" class="form-control" required></div>
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Kirish</button>
+    </form>
+</div>
 </body>
 </html>
 """
-
-
-@app.before_request
-def require_login():
-  if request.endpoint not in ['login', 'static'] and not session.get(
-      'logged_in'
-  ):
-    return redirect(url_for('login'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
   error = None
   if request.method == 'POST':
-    if (
-        request.form.get('username') == 'xoji aka'
-        and request.form.get('password') == '023123.+'
-    ):
+    if request.form.get('password') == 'xojiaka2026':
       session['logged_in'] = True
       return redirect(url_for('operator_dashboard'))
-    error = 'Login yoki parol xato!'
+    error = 'Parol notoʻgʻri!'
   return render_template_string(LOGIN_TEMPLATE, error=error)
 
 
@@ -2152,92 +2227,118 @@ def logout():
 
 @app.route('/')
 def operator_dashboard():
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+
   start_date = request.args.get('start_date', '')
   end_date = request.args.get('end_date', '')
+
   conn = get_db_connection()
 
-  orders_raw = conn.execute('SELECT * FROM orders ORDER BY id DESC').fetchall()
+  date_filter_orders = ''
+  date_filter_incomes = ''
+  params_o = []
+  params_i = []
+
+  if start_date and end_date:
+    date_filter_orders = ' WHERE date BETWEEN ? AND ? '
+    date_filter_incomes = ' WHERE date BETWEEN ? AND ? '
+    params_o = [f'{start_date} 00:00', f'{end_date} 23:59']
+    params_i = [f'{start_date} 00:00', f'{end_date} 23:59']
+
+  orders_raw = conn.execute(
+      f'SELECT * FROM orders {date_filter_orders} ORDER BY id DESC', params_o
+  ).fetchall()
+
   orders = []
   for o in orders_raw:
     o_dict = dict(o)
-    o_dict['history'] = conn.execute(
-        'SELECT status, changed_at FROM order_status_history WHERE order_id = ?',
+    hist = conn.execute(
+        'SELECT status, changed_at FROM order_status_history WHERE order_id = ?'
+        ' ORDER BY id ASC',
         (o['id'],),
     ).fetchall()
+    o_dict['history'] = [dict(h) for h in hist]
     orders.append(o_dict)
 
-  products = conn.execute('SELECT * FROM products').fetchall()
-  shops = conn.execute('SELECT * FROM shops').fetchall()
-  users = conn.execute('SELECT * FROM users').fetchall()
+  products = conn.execute('SELECT * FROM products ORDER BY id DESC').fetchall()
+  shops = conn.execute('SELECT * FROM shops ORDER BY name ASC').fetchall()
+  users = conn.execute('SELECT * FROM users ORDER BY tg_id DESC').fetchall()
+
+  total_revenue = (
+      conn.execute(
+          f'SELECT SUM(total_sum) FROM orders {date_filter_orders}', params_o
+      ).fetchone()[0]
+      or 0
+  )
+
+  total_expense = (
+      conn.execute(
+          f'SELECT SUM(amount) FROM expenses {date_filter_incomes}', params_i
+      ).fetchone()[0]
+      or 0
+  )
+  total_income = (
+      conn.execute(
+          f'SELECT SUM(amount) FROM incomes {date_filter_incomes}', params_i
+      ).fetchone()[0]
+      or 0
+  )
 
   total_debt = conn.execute('SELECT SUM(debt) FROM shops').fetchone()[0] or 0
-  total_income = conn.execute('SELECT SUM(amount) FROM incomes').fetchone()[0] or 0
-  total_expense = (
-      conn.execute('SELECT SUM(amount) FROM expenses').fetchone()[0] or 0
-  )
+
   kassa_balance = total_income - total_expense
 
-  prod_cost_map = {p['name']: p['cost_price'] for p in products}
-  prod_cat_map = {p['name']: p['category'] for p in products}
+  daily_sum = total_revenue
 
-  total_revenue, total_cost, daily_sum = 0, 0, 0
   cat_stats = {}
+  for p in products:
+    cat = p['category'] if p['category'] else 'Boshqa'
+    cat_stats[cat] = cat_stats.get(cat, 0) + (p['stock'] * p['optom_price'])
 
-  for o in orders:
-    if o['status'] != 'Bekor':
-      order_rev = o['total_sum'] or 0
-      order_date = (
-          o['date'].split(' ')[0] if ' ' in o['date'] else o['date']
-      )
-
-      date_match = True
-      if start_date and end_date:
-        date_match = start_date <= order_date <= end_date
-      elif start_date:
-        date_match = order_date >= start_date
-      elif end_date:
-        date_match = order_date <= end_date
-
-      if date_match:
-        daily_sum += order_rev
-
-      total_revenue += order_rev
-
-      for line in (o['items_text'] or '').split('\n'):
-        if not line.strip():
-          continue
-        try:
-          parts = line.split(' - ')
-          p_name = parts[0].strip()
-          q_part = parts[1].split('x')[0].strip()
-          qty = float(q_part)
-
-          c_price = prod_cost_map.get(p_name, 0)
-          total_cost += c_price * qty
-
-          cat = prod_cat_map.get(p_name, 'Boshqa')
-          cat_stats[cat] = cat_stats.get(cat, 0) + (c_price * qty)
-        except:
-          pass
-
-  net_profit = total_revenue - total_cost
-
+  total_cat_val = sum(cat_stats.values()) or 1
   chart_labels = list(cat_stats.keys())
-  chart_data = list(cat_stats.values())
-  color_palette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
-  chart_colors = [color_palette[i % len(color_palette)] for i in range(len(chart_labels))]
+  chart_data = [round(val, 2) for val in cat_stats.values()]
+  chart_colors = [
+      '#3b82f6',
+      '#10b981',
+      '#f59e0b',
+      '#ef4444',
+      '#8b5cf6',
+      '#ec4899',
+      '#14b8a6',
+  ]
 
   cat_table_data = []
-  total_cat_sum = sum(chart_data) if chart_data else 1
-  for i, c_name in enumerate(chart_labels):
-    c_amt = chart_data[i]
-    c_pct = round((c_amt / total_cat_sum) * 100, 1)
+  for idx, (c_name, c_val) in enumerate(cat_stats.items()):
+    pct = round((c_val / total_cat_val) * 100, 1)
     cat_table_data.append({
         'name': c_name,
-        'percent': c_pct,
-        'amount': c_amt,
-        'color': chart_colors[i],
+        'percent': pct,
+        'amount': c_val,
+        'color': chart_colors[idx % len(chart_colors)],
     })
+
+  total_cost = 0
+  for o in orders_raw:
+    items_txt = o['items_text']
+    if items_txt:
+      for line in items_txt.split('\n'):
+        if ' - ' in line:
+          parts = line.split(' - ')
+          if len(parts) > 0:
+            p_name = parts[0].strip()
+            p_info = conn.execute(
+                'SELECT cost_price FROM products WHERE name = ?', (p_name,)
+            ).fetchone()
+            if p_info:
+              try:
+                q_part = parts[1].split('x')[0].strip()
+                total_cost += float(p_info['cost_price']) * float(q_part)
+              except:
+                pass
+
+  net_profit = total_revenue - total_cost - total_expense
 
   conn.close()
 
@@ -2247,33 +2348,40 @@ def operator_dashboard():
       products=products,
       shops=shops,
       users=users,
-      total_debt=total_debt,
-      kassa_balance=kassa_balance,
       total_revenue=total_revenue,
-      total_cost=total_cost,
       total_expense=total_expense,
       total_income=total_income,
-      net_profit=net_profit,
+      total_debt=total_debt,
+      kassa_balance=kassa_balance,
       daily_sum=daily_sum,
-      start_date=start_date,
-      end_date=end_date,
+      net_profit=net_profit,
+      total_cost=total_cost,
       chart_labels=chart_labels,
       chart_data=chart_data,
       chart_colors=chart_colors,
       cat_table_data=cat_table_data,
+      start_date=start_date,
+      end_date=end_date,
   )
 
 
 @app.route('/add_order', methods=['POST'])
-def web_add_order():
-  shop_name = request.form['shop_name']
+def add_order():
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+
+  shop_name = request.form.get('shop_name')
   agent_name = request.form.get('agent_name', 'Admin (Web)')
   discount = float(request.form.get('discount', 0) or 0)
   product_names = request.form.getlist('product_name')
   qtys = request.form.getlist('qty')
 
+  if not shop_name or not product_names:
+    return redirect(url_for('operator_dashboard'))
+
   conn = get_db_connection()
-  total_sum, items_text = 0, ''
+  total_sum = 0
+  items_text = ''
   excel_cart_items = []
 
   for i in range(len(product_names)):
@@ -2288,27 +2396,27 @@ def web_add_order():
     prod = conn.execute(
         'SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)
     ).fetchone()
-    if not prod:
-      continue
-    price = prod['optom_price'] if prod['optom_price'] is not None else 0
-    stock_p = prod['stock'] if prod['stock'] is not None else 0
-    summa = price * qty
-    total_sum += summa
-    items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
+    if prod:
+      price = prod['optom_price'] if prod['optom_price'] is not None else 0
+      stock_p = prod['stock'] if prod['stock'] is not None else 0
+      summa = price * qty
+      total_sum += summa
+      items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
 
-    conn.execute(
-        'UPDATE products SET stock = ? WHERE id = ?',
-        (stock_p - qty, prod['id']),
-    )
-    excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
+      conn.execute(
+          'UPDATE products SET stock = ? WHERE id = ?',
+          (stock_p - qty, prod['id']),
+      )
+      excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = total_sum - discount
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
   cursor.execute(
-      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, discount, status, date, price_type) '
-      "VALUES (?, ?, ?, ?, ?, 'Yangi', ?, 'optom')",
+      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
+      " discount, status, date, price_type) VALUES (?, ?, ?, ?, ?, 'Yangi', ?,"
+      " 'optom')",
       (
           shop_name,
           agent_name,
@@ -2322,35 +2430,38 @@ def web_add_order():
   conn.commit()
   conn.close()
 
-  excel_file = create_excel_invoice(
-      order_id, shop_name, agent_name, bugun, 'optom', excel_cart_items
-  )
   try:
     group_text = (
-        f"📝 <b>YANGI BUYURTMA (#{order_id}) [WEB]</b>\n"
+        f"📝 <b>YANGI BUYURTMA (WEB) (#{order_id})</b>\n"
         f"🏪 <b>Do'kon:</b> {shop_name}\n"
-        f"👤 <b>Mas'ul:</b> {agent_name}\n"
+        f"👤 <b>Operator:</b> {agent_name}\n"
         f"💰 <b>Jami summa:</b> {final_sum:,.0f} so'm\n\n"
         f"<b>Mahsulotlar:</b>\n{items_text}"
     )
     bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
+    excel_file = create_excel_invoice(
+        order_id, shop_name, agent_name, bugun, 'optom', excel_cart_items
+    )
     with open(excel_file, 'rb') as doc_group:
       bot.send_document(
           SEX_GROUP_ID, doc_group, caption=f'📄 Nakladnoy (#{order_id})'
       )
+    if os.path.exists(excel_file):
+      os.remove(excel_file)
   except Exception as e:
-    print('Web guruhga yuborish xatosi:', e)
-
-  if os.path.exists(excel_file):
-    os.remove(excel_file)
+    print('Web order telegram error:', e)
 
   return redirect(url_for('operator_dashboard'))
 
 
 @app.route('/update_status/<int:order_id>', methods=['POST'])
 def update_status(order_id):
-  new_status = request.form['status']
-  now = datetime.now().strftime('%Y-%m-%d %H:%M')
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+
+  new_status = request.form.get('status')
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
   conn = get_db_connection()
   conn.execute(
       'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
@@ -2358,45 +2469,121 @@ def update_status(order_id):
   conn.execute(
       'INSERT INTO order_status_history (order_id, status, changed_at) VALUES'
       ' (?, ?, ?)',
-      (order_id, new_status, now),
+      (order_id, new_status, bugun),
   )
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
+@app.route('/print_nakladnoy/<int:order_id>')
+def print_single_nakladnoy(order_id):
+  conn = get_db_connection()
+  order = conn.execute(
+      'SELECT * FROM orders WHERE id = ?', (order_id,)
+  ).fetchone()
+  conn.close()
+  if not order:
+    return 'Topilmadi'
+
+  items_parsed = []
+  if order['items_text']:
+    for line in order['items_text'].split('\n'):
+      if ' - ' in line:
+        try:
+          parts = line.split(' - ')
+          p_name = parts[0].strip()
+          q_part = parts[1].split('x')[0].strip()
+          s_part = (
+              parts[1]
+              .split('=')[1]
+              .replace("so'm", '')
+              .replace(',', '')
+              .strip()
+          )
+          items_parsed.append({
+              'name': p_name,
+              'qty': float(q_part),
+              'sum': float(s_part),
+          })
+        except:
+          pass
+
+  return render_template_string(
+      NAKLADNOY_TEMPLATE, orders_data=[(dict(order), items_parsed)]
+  )
+
+
+@app.route('/print_nakladnoy')
+def print_multiple_nakladnoys():
+  ids_str = request.args.get('ids', '')
+  if not ids_str:
+    return 'IDlar berilmagan'
+  ids = [int(i.strip()) for i in ids_str.split(',') if i.strip().isdigit()]
+
+  conn = get_db_connection()
+  orders_data = []
+  for o_id in ids:
+    order = conn.execute(
+        'SELECT * FROM orders WHERE id = ?', (o_id,)
+    ).fetchone()
+    if order:
+      items_parsed = []
+      if order['items_text']:
+        for line in order['items_text'].split('\n'):
+          if ' - ' in line:
+            try:
+              parts = line.split(' - ')
+              p_name = parts[0].strip()
+              q_part = parts[1].split('x')[0].strip()
+              s_part = (
+                  parts[1]
+                  .split('=')[1]
+                  .replace("so'm", '')
+                  .replace(',', '')
+                  .strip()
+              )
+              items_parsed.append({
+                  'name': p_name,
+                  'qty': float(q_part),
+                  'sum': float(s_part),
+              })
+            except:
+              pass
+      orders_data.append((dict(order), items_parsed))
+  conn.close()
+
+  return render_template_string(NAKLADNOY_TEMPLATE, orders_data=orders_data)
+
+
 @app.route('/add_stock', methods=['POST'])
 def add_stock():
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
   p_select = request.form.get('product_select')
   qty = float(request.form.get('qty', 0))
-  cost_price = float(request.form.get('cost_price', 0))
-  optom_price = float(request.form.get('optom_price', 0))
+  cost = float(request.form.get('cost_price', 0))
+  optom = float(request.form.get('optom_price', 0))
 
   conn = get_db_connection()
   if p_select == 'NEW':
-    name = request.form.get('new_product_name')
-    category = request.form.get('new_product_category', 'Boshqa')
-    try:
-      conn.execute(
-          'INSERT INTO products (name, category, stock, cost_price,'
-          ' optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
-          (
-              name,
-              category,
-              qty,
-              cost_price,
-              optom_price,
-              optom_price,
-          ),
-      )
-      conn.commit()
-    except:
-      pass
+    new_name = request.form.get('new_product_name')
+    new_cat = request.form.get('new_product_category', 'Boshqa')
+    if new_name:
+      try:
+        conn.execute(
+            'INSERT INTO products (name, category, stock, cost_price,'
+            ' optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
+            (new_name, new_cat, qty, cost, optom, optom),
+        )
+        conn.commit()
+      except:
+        pass
   else:
     conn.execute(
-        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price ='
-        ' ? WHERE name = ?',
-        (qty, cost_price, optom_price, p_select),
+        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ?'
+        ' WHERE name = ?',
+        (qty, cost, optom, p_select),
     )
     conn.commit()
   conn.close()
@@ -2404,9 +2591,11 @@ def add_stock():
 
 
 @app.route('/pay_debt', methods=['POST'])
-def pay_debt_web():
-  shop_id = request.form['shop_id']
-  amount = float(request.form['amount'])
+def web_pay_debt():
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+  shop_id = request.form.get('shop_id')
+  amount = float(request.form.get('amount', 0))
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   conn = get_db_connection()
@@ -2414,15 +2603,11 @@ def pay_debt_web():
       'SELECT name, debt FROM shops WHERE id = ?', (shop_id,)
   ).fetchone()
   if s:
-    curr_debt = s['debt'] if s['debt'] is not None else 0
-    shop_name = s['name']
-    conn.execute(
-        'UPDATE shops SET debt = ? WHERE id = ?',
-        (curr_debt - amount, shop_id),
-    )
+    new_debt = (s['debt'] or 0) - amount
+    conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id))
     conn.execute(
         'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({shop_name})", amount, today),
+        (f"Qarz to'lovi ({s['name']})", amount, today),
     )
     conn.commit()
   conn.close()
@@ -2431,11 +2616,11 @@ def pay_debt_web():
 
 @app.route('/add_income', methods=['POST'])
 def add_income():
-  source, amount, today = (
-      request.form['source'],
-      float(request.form['amount']),
-      datetime.now().strftime('%Y-%m-%d %H:%M'),
-  )
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+  source = request.form.get('source')
+  amount = float(request.form.get('amount', 0))
+  today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
       'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
@@ -2448,11 +2633,11 @@ def add_income():
 
 @app.route('/add_expense', methods=['POST'])
 def add_expense():
-  reason, amount, today = (
-      request.form['reason'],
-      float(request.form['amount']),
-      datetime.now().strftime('%Y-%m-%d %H:%M'),
-  )
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
+  reason = request.form.get('reason')
+  amount = float(request.form.get('amount', 0))
+  today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
       'INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)',
@@ -2463,47 +2648,10 @@ def add_expense():
   return redirect(url_for('operator_dashboard'))
 
 
-@app.route('/print_nakladnoy')
-def print_nakladnoys_multi():
-  ids_str = request.args.get('ids', '')
-  if not ids_str:
-    return 'ID lar berilmagan'
-  order_ids = [int(i.strip()) for i in ids_str.split(',') if i.strip().isdigit()]
-
-  conn = get_db_connection()
-  orders_data = []
-  for o_id in order_ids:
-    order = conn.execute('SELECT * FROM orders WHERE id = ?', (o_id,)).fetchone()
-    if order:
-      items_parsed = []
-      for line in (order['items_text'] or '').split('\n'):
-        if not line.strip():
-          continue
-        try:
-          parts = line.split(' - ')
-          p_name = parts[0].strip()
-          subparts = parts[1].split('x = ')
-          qty = float(subparts[0].strip())
-          summa = float(
-              subparts[1].replace(' so\'m', '').replace(',', '').strip()
-          )
-          items_parsed.append({'name': p_name, 'qty': qty, 'sum': summa})
-        except:
-          pass
-      orders_data.append((order, items_parsed))
-  conn.close()
-  return render_template_string(
-      NAKLADNOY_TEMPLATE, orders_data=orders_data
-  )
-
-
-@app.route('/print_nakladnoy/<int:order_id>')
-def print_nakladnoy_single(order_id):
-  return redirect(url_for('print_nakladnoys_multi', ids=str(order_id)))
-
-
 @app.route('/export_excel')
 def export_excel():
+  if not session.get('logged_in'):
+    return redirect(url_for('login'))
   conn = get_db_connection()
   orders = pd.read_sql_query('SELECT * FROM orders', conn)
   shops = pd.read_sql_query('SELECT * FROM shops', conn)
@@ -2516,14 +2664,23 @@ def export_excel():
     shops.to_excel(writer, sheet_name="Do'konlar", index=False)
     products.to_excel(writer, sheet_name='Mahsulotlar', index=False)
   output.seek(0)
+
   return send_file(
       output,
       mimetype=(
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       ),
       as_attachment=True,
-      download_name='XojiAka_Factory_Report.xlsx',
+      download_name='XojiAka_Factory_Data.xlsx',
   )
+
+
+def run_telegram_bot():
+  while True:
+    try:
+      bot.polling(none_stop=True, interval=0, timeout=20)
+    except Exception as e:
+      print('Bot polling xatosi:', e)
 
 
 def run_bot():
