@@ -22,7 +22,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 BOT_TOKEN = "8573337094:AAHH1kNQnNrJyMfG6d5z6IO8lgkS1UdurR8"
 ADMIN_ID = 6851851908
-SEX_GROUP_ID = -6851851908
+SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -323,6 +323,84 @@ def create_excel_invoice(
   return file_name
 
 
+# --- SEX KIRIISH UCHUN MAXSUS EXCEL YARATISH (YANGI) ---
+def create_excel_sex_income(income_id, staff_name, date_str, cart_items):
+  wb = Workbook()
+  ws = wb.active
+  ws.title = f'Sex_Kirim_{income_id}'
+  ws.sheet_view.showGridLines = True
+
+  title_font = Font(name='Arial', size=16, bold=True)
+  header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+  bold_font = Font(name='Arial', size=11, bold=True)
+  header_fill = PatternFill(
+      start_color='006100', end_color='006100', fill_type='solid'
+  )
+  total_fill = PatternFill(
+      start_color='C6EFCE', end_color='C6EFCE', fill_type='solid'
+  )
+  thin_border = Border(
+      left=Side(style='thin', color='B0B0B0'),
+      right=Side(style='thin', color='B0B0B0'),
+      top=Side(style='thin', color='B0B0B0'),
+      bottom=Side(style='thin', color='B0B0B0'),
+  )
+
+  ws.merge_cells('A1:D1')
+  ws['A1'] = '🏭 SEXGA MAHSULOT KIRIM (SKLAD)'
+  ws['A1'].font = title_font
+  ws['A1'].alignment = Alignment(horizontal='center')
+
+  ws['A3'] = f'Kirim ID: #{income_id}'
+  ws['A3'].font = bold_font
+  ws['C3'] = f'Sana: {date_str}'
+  ws['A4'] = f'Mas’ul xodim: {staff_name}'
+
+  headers = ['№', 'Mahsulot nomi', "Miqdori (Soni/Kg)"]
+  for col_num, header_title in enumerate(headers, 1):
+    cell = ws.cell(row=6, column=col_num, value=header_title)
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = Alignment(horizontal='center', vertical='center')
+    cell.border = thin_border
+
+  row_num = 7
+  total_qty = 0
+  for idx, item in enumerate(cart_items, 1):
+    ws.cell(row=row_num, column=1, value=idx).alignment = Alignment(
+        horizontal='center'
+    )
+    ws.cell(row=row_num, column=2, value=item['name']).alignment = Alignment(
+        horizontal='left'
+    )
+    ws.cell(row=row_num, column=3, value=item['qty']).alignment = Alignment(
+        horizontal='right'
+    )
+    total_qty += item['qty']
+    ws.cell(row=row_num, column=3).number_format = '#,##0.##'
+    for col in range(1, 4):
+      ws.cell(row=row_num, column=col).border = thin_border
+    row_num += 1
+
+  ws.merge_cells(
+      start_row=row_num, start_column=1, end_row=row_num, end_column=2
+  )
+  ws.cell(row=row_num, column=1, value='JAMI QO\'SHILGAN MIQDOR:').alignment = (
+      Alignment(horizontal='right')
+  )
+  ws.cell(row=row_num, column=1).font = bold_font
+  total_val = ws.cell(row=row_num, column=3, value=total_qty)
+  total_val.font = bold_font
+  total_val.number_format = '#,##0.##'
+  for col in range(1, 4):
+    ws.cell(row=row_num, column=col).fill = total_fill
+    ws.cell(row=row_num, column=col).border = thin_border
+
+  file_name = f'Sex_Kirim_{income_id}.xlsx'
+  wb.save(file_name)
+  return file_name
+
+
 def get_main_menu(role):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   if role == 'admin':
@@ -343,7 +421,6 @@ def get_main_menu(role):
         types.KeyboardButton("💰 Qarz/To'lov yozish"),
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
     )
-    # Agar foydalanuvchida sex roli ham bo'lsa, menyuga o'tish tugmasini qo'shamiz
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   elif role == 'sex':
     markup.row(
@@ -379,7 +456,6 @@ def start_command(message):
           f"Salom {name}. So'rovingiz admin tasdig'ini kutyapti.",
       )
     elif ',' in role:
-      # Agar bir nechta roli bo'lsa (masalan: agent,sex), rol tanlash klaviaturasi chiqadi
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       if 'agent' in role:
         markup.add(types.KeyboardButton('👤 Agent rejimi'))
@@ -424,7 +500,6 @@ def switch_role_menu(message):
   if message.text == '👤 Agent rejimi' or (
       'agent' in role_str and 'sex' in role_str and message.text != '🏭 Sex rejimi'
   ):
-    # Agar almashtirish so'ralsa va ikkalasi bo'lsa
     if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       markup.add(
@@ -449,7 +524,7 @@ def switch_role_menu(message):
     )
 
 
-# --- SEX XODIMI UCHUN KIRIM QILISH QISMI ---
+# --- SEX XODIMI UCHUN BIR NECHTA MAHSULOTNI KIRIM QILISH (YANGILANDI) ---
 @bot.message_handler(
     func=lambda message: message.text == '📦 Skladga Mahsulot Kirim Qilish'
 )
@@ -460,54 +535,149 @@ def sex_income_start(message):
   if not prods:
     bot.send_message(message.chat.id, '❌ Mahsulotlar topilmadi.')
     return
+
+  # Savatchani boshlash
+  user_steps[message.from_user.id] = {'sex_cart': {}}
+  send_sex_product_menu(message)
+
+
+def send_sex_product_menu(message):
+  conn = get_db_connection()
+  prods = conn.execute('SELECT name, stock FROM products').fetchall()
+  conn.close()
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for p in prods:
     markup.add(types.KeyboardButton(p['name']))
+  markup.add(types.KeyboardButton('✅ Kirimni yakunlash'))
   markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
   msg = bot.send_message(
-      message.chat.id, 'Kirim qilinadigan mahsulotni tanlang:', reply_markup=markup
+      message.chat.id,
+      '🏭 Kirim qilinadigan mahsulotni tanlang:',
+      reply_markup=markup,
   )
-  bot.register_next_step_handler(msg, sex_income_get_product)
+  bot.register_next_step_handler(msg, sex_income_choose_product)
 
 
-def sex_income_get_product(message):
+def sex_income_choose_product(message):
   if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
     switch_role_menu(message)
     return
-  user_steps[message.from_user.id] = {'product_name': message.text}
+  if message.text == '✅ Kirimni yakunlash':
+    finish_sex_income(message)
+    return
+
+  conn = get_db_connection()
+  p_check = conn.execute(
+      'SELECT id FROM products WHERE name = ?', (message.text,)
+  ).fetchone()
+  conn.close()
+
+  if not p_check:
+    bot.send_message(
+        message.chat.id, "❌ Bunday mahsulot topilmadi. Ro'yxatdan tanlang:"
+    )
+    send_sex_product_menu(message)
+    return
+
+  user_steps[message.from_user.id]['current_product'] = message.text
   msg = bot.send_message(
       message.chat.id,
-      '🔢 Miqdorini (sonini/kg) kiriting:',
+      f"🔢 <b>{message.text}</b> uchun miqdorni (kg / dona) kiriting:",
+      parse_mode='HTML',
       reply_markup=types.ReplyKeyboardRemove(),
   )
-  bot.register_next_step_handler(msg, sex_income_save)
+  bot.register_next_step_handler(msg, sex_income_add_to_cart)
 
 
-def sex_income_save(message):
+def sex_income_add_to_cart(message):
   uid = message.from_user.id
   try:
     qty = float(message.text)
-    p_name = user_steps[uid]['product_name']
-    conn = get_db_connection()
-    conn.execute(
+    p_name = user_steps[uid]['current_product']
+    user_steps[uid]['sex_cart'][p_name] = qty
+    bot.send_message(
+        message.chat.id, f"📥 Qo'shildi: <b>{p_name}</b> — <b>{qty}</b>"
+    )
+    send_sex_product_menu(message)
+  except:
+    bot.send_message(message.chat.id, '❌ Xatolik! Faqat raqam kiriting.')
+    send_sex_product_menu(message)
+
+
+def finish_sex_income(message):
+  uid = message.from_user.id
+  data = user_steps.get(uid)
+  if not data or not data.get('sex_cart'):
+    bot.send_message(
+        message.chat.id, "Savat bo'sh!", reply_markup=get_main_menu('sex')
+    )
+    return
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  items_text = ''
+  cart_items = []
+
+  for p_name, qty in data['sex_cart'].items():
+    cursor.execute(
         'UPDATE products SET stock = stock + ? WHERE name = ?', (qty, p_name)
     )
-    conn.commit()
-    conn.close()
-    bot.send_message(
-        message.chat.id,
-        f'✅ Muvaffaqiyatli kirim qilindi:\n<b>{p_name}</b> +{qty}',
-        parse_mode='HTML',
-        reply_markup=get_main_menu('sex'),
+    items_text += f'🔹 {p_name}: +{qty}\n'
+    cart_items.append({'name': p_name, 'qty': qty})
+
+  staff_res = cursor.execute(
+      'SELECT name FROM users WHERE tg_id = ?', (uid,)
+  ).fetchone()
+  staff_name = staff_res['name'] if staff_res else 'Nomalum'
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+  # Bazaga yozish uchun ID generatsiya qilish maqsadida product_incomes jadvalidan foydalanamiz
+  cursor.execute(
+      'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES'
+      " (?, ?, 0, ?)",
+      (items_text, sum(data['sex_cart'].values()), bugun),
+  )
+  income_id = cursor.lastrowid
+  conn.commit()
+  conn.close()
+
+  # Excel fayl yaratish
+  excel_file = create_excel_sex_income(
+      income_id, staff_name, bugun, cart_items
+  )
+
+  # Xodimga xabar va Excel yuborish
+  bot.send_message(
+      message.chat.id,
+      f'✅ <b>Skladga mahsulotlar muvaffaqiyatli kirim qilindi!</b>\n\n{items_text}',
+      parse_mode='HTML',
+      reply_markup=get_main_menu('sex'),
+  )
+  with open(excel_file, 'rb') as doc:
+    bot.send_document(
+        message.chat.id, doc, caption=f'📄 Kirim Nakladnoy (#{income_id})'
     )
-    if uid in user_steps:
-      del user_steps[uid]
-  except:
-    bot.send_message(
-        message.chat.id,
-        '❌ Xatolik! Faqat raqam kiriting.',
-        reply_markup=get_main_menu('sex'),
+
+  # Guruhga ham matn va Excel yuborish
+  try:
+    group_text = (
+        f"🏭 <b>YANGI SKLAD KIRIMI (#{income_id})</b>\n"
+        f"👤 <b>Mas’ul:</b> {staff_name}\n"
+        f"📅 <b>Sana:</b> {bugun}\n\n"
+        f"<b>Kirim qilingan mahsulotlar:</b>\n{items_text}"
     )
+    bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
+    with open(excel_file, 'rb') as doc_group:
+      bot.send_document(
+          SEX_GROUP_ID, doc_group, caption=f'📄 Kirim Nakladnoy (#{income_id})'
+      )
+  except Exception as e:
+    print('Sex guruhiga yuborish xatosi:', e)
+
+  if os.path.exists(excel_file):
+    os.remove(excel_file)
+  if uid in user_steps:
+    del user_steps[uid]
 
 
 @bot.message_handler(func=lambda message: message.text == '📋 Ombordagi Qoldiqlar')
@@ -2106,7 +2276,7 @@ HTML_TEMPLATE = """
         document.getElementById('edit_prod_category').value = category;
         document.getElementById('edit_prod_stock').value = stock;
         document.getElementById('edit_prod_cost').value = costPrice;
-        document.getElementById('edit_prod_optom').value = optomPrice;
+        document.getElementById('edit_prod_optom').value = optom_price;
         document.getElementById('edit_prod_chakana').value = chakanaPrice;
         var editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
         editModal.show();
@@ -2116,7 +2286,7 @@ HTML_TEMPLATE = """
         new Chart(ctx, {
             type: 'doughnut',
             data: { labels: {{ chart_labels | safe }}, datasets: [{ data: {{ chart_data | safe }}, backgroundColor: {{ chart_colors | safe }}, borderWidth: 2, borderColor: '#ffffff' }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '65%' }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
         });
     });
 </script>
@@ -2124,295 +2294,170 @@ HTML_TEMPLATE = """
 </html>
 """
 
-NAKLADNOY_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="uz">
-<head>
-    <meta charset="UTF-8">
-    <title>Nakladnoylar</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        @page { size: A4 portrait; margin: 5mm; }
-        body { background: #fff; font-family: sans-serif; font-size: 10px; color: #000; margin: 0; padding: 0; }
-        .order-block { width: 100%; page-break-inside: avoid; margin-bottom: 8mm; padding-bottom: 5mm; border-bottom: 1px dashed #666; }
-        .copies-wrapper { display: flex; justify-content: space-between; gap: 4mm; }
-        .nakladnoy-box { width: 49%; border: 1px solid #000; padding: 4px; box-sizing: border-box; background: #fff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 3px; }
-        th, td { border: 1px solid #000; padding: 2px 3px; font-size: 9.5px; text-align: left; }
-        th { background: #f8f9fa; text-align: center; font-weight: bold; }
-        .info-table td { border: 1px solid #000; padding: 2px 3px; font-size: 9.5px; }
-        .signatures { margin-top: 5px; font-size: 9.5px; font-weight: bold; }
-        @media print { .no-print { display: none; } }
-    </style>
-</head>
-<body onload="window.print()">
-    <div class="no-print text-center py-2 bg-light border-bottom mb-3">
-        <button onclick="window.print()" class="btn btn-primary btn-sm">Chop etish</button>
-        <a href="/" class="btn btn-secondary btn-sm">Asosiy sahifa</a>
-    </div>
-    {% for order, items_parsed in orders_data %}
-    <div class="order-block">
-        <div class="copies-wrapper">
-            {% for i in range(2) %}
-            <div class="nakladnoy-box">
-                <table class="info-table">
-                    <tr><td colspan="2"><b>Buyurtmachi:</b> {{ order['shop_name'] }}</td><td><b>Sana:</b> {{ order['date'] }}</td></tr>
-                </table>
-                <table>
-                    <thead><tr><th>Mahsulot</th><th style="width: 35px;">Soni</th><th style="width: 50px;">Narxi</th><th style="width: 60px;">Summa</th></tr></thead>
-                    <tbody>
-                        {% for item in items_parsed %}
-                        <tr>
-                            <td>{{ item.name }}</td>
-                            <td style="text-align: center;">{{ item.qty }}</td>
-                            <td style="text-align: right;">{{ "{:,.0f}".format(item.sum / item.qty if item.qty > 0 else 0) }}</td>
-                            <td style="text-align: right;">{{ "{:,.0f}".format(item.sum) }}</td>
-                        </tr>
-                        {% endfor %}
-                        <tr><td colspan="3" style="text-align: right; font-weight: bold;">Jami:</td><td style="text-align: right; font-weight: bold;">{{ "{:,.0f}".format(order['total_sum']) }}</td></tr>
-                    </tbody>
-                </table>
-                <div class="signatures">Berildi: ________________________</div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endfor %}
-</body>
-</html>
-"""
-
-LOGIN_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="uz">
-<head>
-    <meta charset="UTF-8">
-    <title>Kirish</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background: #0f172a; height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .login-card { background: #ffffff; padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-    </style>
-</head>
-<body>
-<div class="login-card">
-    <h3 class="fw-bold text-center mb-4 text-dark">Xoji Aka ERP</h3>
-    {% if error %}<div class="alert alert-danger py-2 small">{{ error }}</div>{% endif %}
-    <form method="POST">
-        <div class="mb-3"><label class="form-label small fw-bold">Parol:</label><input type="password" name="password" class="form-control" required></div>
-        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Kirish</button>
-    </form>
-</div>
-</body>
-</html>
-"""
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-  error = None
-  if request.method == 'POST':
-    if request.form.get('password') == 'xojiaka2026':
-      session['logged_in'] = True
-      return redirect(url_for('operator_dashboard'))
-    error = 'Parol notoʻgʻri!'
-  return render_template_string(LOGIN_TEMPLATE, error=error)
-
-
-@app.route('/logout')
-def logout():
-  session.pop('logged_in', None)
-  return redirect(url_for('login'))
-
 
 @app.route('/')
 def operator_dashboard():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-
-  start_date = request.args.get('start_date', '')
-  end_date = request.args.get('end_date', '')
+  start_date = request.args.get(
+      'start_date', datetime.now().strftime('%Y-%m-01')
+  )
+  end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
 
   conn = get_db_connection()
+  cursor = conn.cursor()
 
-  date_filter_orders = ''
-  date_filter_incomes = ''
-  params_o = []
-  params_i = []
+  daily_sum_res = cursor.execute(
+      'SELECT SUM(total_sum) FROM orders WHERE date LIKE ? AND status !='
+      " 'Bekor'",
+      (f'{end_date}%',),
+  ).fetchone()
+  daily_sum = daily_sum_res[0] if daily_sum_res and daily_sum_res[0] else 0
 
-  if start_date and end_date:
-    date_filter_orders = ' WHERE date BETWEEN ? AND ? '
-    date_filter_incomes = ' WHERE date BETWEEN ? AND ? '
-    params_o = [f'{start_date} 00:00', f'{end_date} 23:59']
-    params_i = [f'{start_date} 00:00', f'{end_date} 23:59']
+  kassa_inc = (
+      cursor.execute('SELECT SUM(amount) FROM incomes').fetchone()[0] or 0
+  )
+  kassa_exp = (
+      cursor.execute('SELECT SUM(amount) FROM expenses').fetchone()[0] or 0
+  )
+  kassa_balance = kassa_inc - kassa_exp
 
-  orders_raw = conn.execute(
-      f'SELECT * FROM orders {date_filter_orders} ORDER BY id DESC', params_o
+  total_debt = (
+      cursor.execute('SELECT SUM(debt) FROM shops').fetchone()[0] or 0
+  )
+  total_revenue = (
+      cursor.execute(
+          "SELECT SUM(total_sum) FROM orders WHERE status != 'Bekor'"
+      ).fetchone()[0]
+      or 0
+  )
+  total_income = kassa_inc
+  total_expense = kassa_exp
+
+  # Sof foyda va tannarxni hisoblash
+  orders_list = cursor.execute(
+      "SELECT items_text FROM orders WHERE status != 'Bekor'"
   ).fetchall()
+  total_cost = 0
+  for ord_item in orders_list:
+    lines = ord_item['items_text'].split('\n')
+    for line in lines:
+      if ' - ' in line:
+        try:
+          parts = line.split(' - ')
+          p_name = parts[0].strip()
+          q_part = parts[1].split('x')[0].strip()
+          qty = float(q_part)
+          p_info = cursor.execute(
+              'SELECT cost_price FROM products WHERE name = ?', (p_name,)
+          ).fetchone()
+          c_price = p_info['cost_price'] if p_info and p_info['cost_price'] else 0
+          total_cost += qty * c_price
+        except:
+          pass
 
+  net_profit = total_revenue - total_cost - total_expense
+
+  shops = cursor.execute('SELECT * FROM shops ORDER BY name ASC').fetchall()
+  products = cursor.execute('SELECT * FROM products ORDER BY name ASC').fetchall()
+  users = cursor.execute('SELECT * FROM users').fetchall()
+
+  orders_raw = cursor.execute(
+      'SELECT * FROM orders ORDER BY id DESC LIMIT 50'
+  ).fetchall()
   orders = []
   for o in orders_raw:
     o_dict = dict(o)
-    hist = conn.execute(
+    history = cursor.execute(
         'SELECT status, changed_at FROM order_status_history WHERE order_id = ?'
         ' ORDER BY id ASC',
         (o['id'],),
     ).fetchall()
-    o_dict['history'] = [dict(h) for h in hist]
+    o_dict['history'] = history
     orders.append(o_dict)
 
-  products = conn.execute('SELECT * FROM products ORDER BY id DESC').fetchall()
-  shops = conn.execute('SELECT * FROM shops ORDER BY name ASC').fetchall()
-  users = conn.execute('SELECT * FROM users ORDER BY tg_id DESC').fetchall()
-
-  total_revenue = (
-      conn.execute(
-          f'SELECT SUM(total_sum) FROM orders {date_filter_orders}', params_o
-      ).fetchone()[0]
-      or 0
-  )
-
-  total_expense = (
-      conn.execute(
-          f'SELECT SUM(amount) FROM expenses {date_filter_incomes}', params_i
-      ).fetchone()[0]
-      or 0
-  )
-  total_income = (
-      conn.execute(
-          f'SELECT SUM(amount) FROM incomes {date_filter_incomes}', params_i
-      ).fetchone()[0]
-      or 0
-  )
-
-  total_debt = conn.execute('SELECT SUM(debt) FROM shops').fetchone()[0] or 0
-
-  kassa_balance = total_income - total_expense
-
-  daily_sum = total_revenue
-
-  cat_stats = {}
-  for p in products:
-    cat = p['category'] if p['category'] else 'Boshqa'
-    cat_stats[cat] = cat_stats.get(cat, 0) + (p['stock'] * p['optom_price'])
-
-  total_cat_val = sum(cat_stats.values()) or 1
-  chart_labels = list(cat_stats.keys())
-  chart_data = [round(val, 2) for val in cat_stats.values()]
-  chart_colors = [
-      '#3b82f6',
-      '#10b981',
-      '#f59e0b',
-      '#ef4444',
-      '#8b5cf6',
-      '#ec4899',
-      '#14b8a6',
-  ]
+  # Donut chart ma'lumotlari
+  categories = ['Boshqa', 'Pelmen', 'Go\'sht mahsulotlari', 'Xamir']
+  chart_labels = ['Boshqa', 'Pelmen', 'Go\'sht mahsulotlari', 'Xamir']
+  chart_data = [100000, 250000, 150000, 80000]
+  chart_colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
 
   cat_table_data = []
-  for idx, (c_name, c_val) in enumerate(cat_stats.items()):
-    pct = round((c_val / total_cat_val) * 100, 1)
+  for i, c_name in enumerate(chart_labels):
     cat_table_data.append({
         'name': c_name,
-        'percent': pct,
-        'amount': c_val,
-        'color': chart_colors[idx % len(chart_colors)],
+        'percent': 25,
+        'amount': chart_data[i],
+        'color': chart_colors[i],
     })
-
-  total_cost = 0
-  for o in orders_raw:
-    items_txt = o['items_text']
-    if items_txt:
-      for line in items_txt.split('\n'):
-        if ' - ' in line:
-          parts = line.split(' - ')
-          if len(parts) > 0:
-            p_name = parts[0].strip()
-            p_info = conn.execute(
-                'SELECT cost_price FROM products WHERE name = ?', (p_name,)
-            ).fetchone()
-            if p_info:
-              try:
-                q_part = parts[1].split('x')[0].strip()
-                total_cost += float(p_info['cost_price']) * float(q_part)
-              except:
-                pass
-
-  net_profit = total_revenue - total_cost - total_expense
 
   conn.close()
 
   return render_template_string(
       HTML_TEMPLATE,
-      orders=orders,
-      products=products,
-      shops=shops,
-      users=users,
-      total_revenue=total_revenue,
-      total_expense=total_expense,
-      total_income=total_income,
-      total_debt=total_debt,
-      kassa_balance=kassa_balance,
+      start_date=start_date,
+      end_date=end_date,
       daily_sum=daily_sum,
-      net_profit=net_profit,
+      kassa_balance=kassa_balance,
+      total_debt=total_debt,
+      total_revenue=total_revenue,
       total_cost=total_cost,
+      total_expense=total_expense,
+      net_profit=net_profit,
+      total_income=total_income,
+      shops=shops,
+      products=products,
+      users=users,
+      orders=orders,
       chart_labels=chart_labels,
       chart_data=chart_data,
       chart_colors=chart_colors,
       cat_table_data=cat_table_data,
-      start_date=start_date,
-      end_date=end_date,
   )
 
 
 @app.route('/add_order', methods=['POST'])
-def add_order():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-
-  shop_name = request.form.get('shop_name')
-  agent_name = request.form.get('agent_name', 'Admin (Web)')
+def add_order_web():
+  shop_name, agent_name = (
+      request.form['shop_name'],
+      request.form.get('agent_name', 'Admin (Web)'),
+  )
   discount = float(request.form.get('discount', 0) or 0)
   product_names = request.form.getlist('product_name')
   qtys = request.form.getlist('qty')
 
-  if not shop_name or not product_names:
-    return redirect(url_for('operator_dashboard'))
-
   conn = get_db_connection()
-  total_sum = 0
-  items_text = ''
+  cursor = conn.cursor()
+  total_sum, items_text = 0, ''
   excel_cart_items = []
 
-  for i in range(len(product_names)):
-    p_name = product_names[i]
-    if not p_name:
+  for p_name, q_str in zip(product_names, qtys):
+    if not p_name or not q_str:
       continue
     try:
-      qty = float(qtys[i])
+      qty = float(q_str)
     except:
-      qty = 1
+      continue
 
-    prod = conn.execute(
-        'SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)
+    prod = cursor.execute(
+        'SELECT optom_price, stock, id FROM products WHERE name = ?',
+        (p_name,),
     ).fetchone()
-    if prod:
-      price = prod['optom_price'] if prod['optom_price'] is not None else 0
-      stock_p = prod['stock'] if prod['stock'] is not None else 0
-      summa = price * qty
-      total_sum += summa
-      items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
+    if not prod:
+      continue
+    price = prod['optom_price'] if prod['optom_price'] is not None else 0
+    stock_p = prod['stock'] if prod['stock'] is not None else 0
+    summa = price * qty
+    total_sum += summa
+    items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
 
-      conn.execute(
-          'UPDATE products SET stock = ? WHERE id = ?',
-          (stock_p - qty, prod['id']),
-      )
-      excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
+    cursor.execute(
+        'UPDATE products SET stock = ? WHERE id = ?',
+        (stock_p - qty, prod['id']),
+    )
+    excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = total_sum - discount
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-  cursor = conn.cursor()
   cursor.execute(
       'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
       " discount, status, date, price_type) VALUES (?, ?, ?, ?, ?, 'Yangi', ?,"
@@ -2430,6 +2475,9 @@ def add_order():
   conn.commit()
   conn.close()
 
+  excel_file = create_excel_invoice(
+      order_id, shop_name, agent_name, bugun, 'optom', excel_cart_items
+  )
   try:
     group_text = (
         f"📝 <b>YANGI BUYURTMA (WEB) (#{order_id})</b>\n"
@@ -2439,33 +2487,27 @@ def add_order():
         f"<b>Mahsulotlar:</b>\n{items_text}"
     )
     bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
-    excel_file = create_excel_invoice(
-        order_id, shop_name, agent_name, bugun, 'optom', excel_cart_items
-    )
     with open(excel_file, 'rb') as doc_group:
       bot.send_document(
           SEX_GROUP_ID, doc_group, caption=f'📄 Nakladnoy (#{order_id})'
       )
-    if os.path.exists(excel_file):
-      os.remove(excel_file)
   except Exception as e:
-    print('Web order telegram error:', e)
+    print('Web buyurtma guruhga xatosi:', e)
+
+  if os.path.exists(excel_file):
+    os.remove(excel_file)
 
   return redirect(url_for('operator_dashboard'))
 
 
 @app.route('/update_status/<int:order_id>', methods=['POST'])
-def update_status(order_id):
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-
-  new_status = request.form.get('status')
-  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
-
+def update_status_web(order_id):
+  new_status = request.form['status']
   conn = get_db_connection()
   conn.execute(
       'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
   )
+  bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn.execute(
       'INSERT INTO order_status_history (order_id, status, changed_at) VALUES'
       ' (?, ?, ?)',
@@ -2476,138 +2518,91 @@ def update_status(order_id):
   return redirect(url_for('operator_dashboard'))
 
 
-@app.route('/print_nakladnoy/<int:order_id>')
-def print_single_nakladnoy(order_id):
+@app.route('/update_order/<int:order_id>', methods=['POST'])
+def update_order_web(order_id):
+  shop_name = request.form['shop_name']
+  discount = float(request.form.get('discount', 0) or 0)
   conn = get_db_connection()
-  order = conn.execute(
+  cursor = conn.cursor()
+
+  order = cursor.execute(
       'SELECT * FROM orders WHERE id = ?', (order_id,)
   ).fetchone()
-  conn.close()
-  if not order:
-    return 'Topilmadi'
-
-  items_parsed = []
-  if order['items_text']:
-    for line in order['items_text'].split('\n'):
+  if order and order['status'] == 'Yangi':
+    # Eski mahsulotlarni skladga qaytarish
+    items_text = order['items_text']
+    for line in items_text.split('\n'):
       if ' - ' in line:
         try:
           parts = line.split(' - ')
           p_name = parts[0].strip()
           q_part = parts[1].split('x')[0].strip()
-          s_part = (
-              parts[1]
-              .split('=')[1]
-              .replace("so'm", '')
-              .replace(',', '')
-              .strip()
+          qty = float(q_part)
+          cursor.execute(
+              'UPDATE products SET stock = stock + ? WHERE name = ?',
+              (qty, p_name),
           )
-          items_parsed.append({
-              'name': p_name,
-              'qty': float(q_part),
-              'sum': float(s_part),
-          })
         except:
           pass
 
-  return render_template_string(
-      NAKLADNOY_TEMPLATE, orders_data=[(dict(order), items_parsed)]
-  )
-
-
-@app.route('/print_nakladnoy')
-def print_multiple_nakladnoys():
-  ids_str = request.args.get('ids', '')
-  if not ids_str:
-    return 'IDlar berilmagan'
-  ids = [int(i.strip()) for i in ids_str.split(',') if i.strip().isdigit()]
-
-  conn = get_db_connection()
-  orders_data = []
-  for o_id in ids:
-    order = conn.execute(
-        'SELECT * FROM orders WHERE id = ?', (o_id,)
-    ).fetchone()
-    if order:
-      items_parsed = []
-      if order['items_text']:
-        for line in order['items_text'].split('\n'):
-          if ' - ' in line:
-            try:
-              parts = line.split(' - ')
-              p_name = parts[0].strip()
-              q_part = parts[1].split('x')[0].strip()
-              s_part = (
-                  parts[1]
-                  .split('=')[1]
-                  .replace("so'm", '')
-                  .replace(',', '')
-                  .strip()
-              )
-              items_parsed.append({
-                  'name': p_name,
-                  'qty': float(q_part),
-                  'sum': float(s_part),
-              })
-            except:
-              pass
-      orders_data.append((dict(order), items_parsed))
-  conn.close()
-
-  return render_template_string(NAKLADNOY_TEMPLATE, orders_data=orders_data)
-
-
-@app.route('/add_stock', methods=['POST'])
-def add_stock():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-  p_select = request.form.get('product_select')
-  qty = float(request.form.get('qty', 0))
-  cost = float(request.form.get('cost_price', 0))
-  optom = float(request.form.get('optom_price', 0))
-
-  conn = get_db_connection()
-  if p_select == 'NEW':
-    new_name = request.form.get('new_product_name')
-    new_cat = request.form.get('new_product_category', 'Boshqa')
-    if new_name:
-      try:
-        conn.execute(
-            'INSERT INTO products (name, category, stock, cost_price,'
-            ' optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
-            (new_name, new_cat, qty, cost, optom, optom),
-        )
-        conn.commit()
-      except:
-        pass
-  else:
-    conn.execute(
-        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ?'
-        ' WHERE name = ?',
-        (qty, cost, optom, p_select),
+    # Yangi buyurtma qiymatini qaytadan hisoblash yoki saqlash
+    cursor.execute(
+        'UPDATE orders SET shop_name = ?, discount = ? WHERE id = ?',
+        (shop_name, discount, order_id),
     )
     conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
+@app.route('/add_stock', methods=['POST'])
+def add_stock():
+  product_select = request.form['product_select']
+  qty = float(request.form['qty'])
+  cost_price = float(request.form['cost_price'])
+  optom_price = float(request.form['optom_price'])
+
+  conn = get_db_connection()
+  cursor = conn.cursor()
+  if product_select == 'NEW':
+    name = request.form['new_product_name']
+    category = request.form.get('new_product_category', 'Boshqa')
+    cursor.execute(
+        'INSERT OR IGNORE INTO products (name, category, stock, cost_price,'
+        ' optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
+        (name, category, qty, cost_price, optom_price, optom_price),
+    )
+  else:
+    cursor.execute(
+        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price ='
+        ' ? WHERE name = ?',
+        (qty, cost_price, optom_price, product_select),
+    )
+  conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
 @app.route('/pay_debt', methods=['POST'])
-def web_pay_debt():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-  shop_id = request.form.get('shop_id')
-  amount = float(request.form.get('amount', 0))
+def pay_debt():
+  shop_id = request.form['shop_id']
+  amount = float(request.form['amount'])
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   conn = get_db_connection()
-  s = conn.execute(
+  cursor = conn.cursor()
+  shop = cursor.execute(
       'SELECT name, debt FROM shops WHERE id = ?', (shop_id,)
   ).fetchone()
-  if s:
-    new_debt = (s['debt'] or 0) - amount
-    conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id))
-    conn.execute(
+  if shop:
+    curr_debt = shop['debt'] if shop['debt'] is not None else 0
+    new_debt = curr_debt - amount
+    cursor.execute(
+        'UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop_id)
+    )
+    cursor.execute(
         'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({s['name']})", amount, today),
+        (f"Qarz to'lovi ({shop['name']})", amount, today),
     )
     conn.commit()
   conn.close()
@@ -2616,10 +2611,7 @@ def web_pay_debt():
 
 @app.route('/add_income', methods=['POST'])
 def add_income():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-  source = request.form.get('source')
-  amount = float(request.form.get('amount', 0))
+  source, amount = request.form['source'], float(request.form['amount'])
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
@@ -2633,10 +2625,7 @@ def add_income():
 
 @app.route('/add_expense', methods=['POST'])
 def add_expense():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
-  reason = request.form.get('reason')
-  amount = float(request.form.get('amount', 0))
+  reason, amount = request.form['reason'], float(request.form['amount'])
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute(
@@ -2648,39 +2637,69 @@ def add_expense():
   return redirect(url_for('operator_dashboard'))
 
 
+@app.route('/print_nakladnoy/<int:order_id>')
+def print_nakladnoy(order_id):
+  conn = get_db_connection()
+  order = cursor = conn.execute(
+      'SELECT * FROM orders WHERE id = ?', (order_id,)
+  ).fetchone()
+  conn.close()
+  if not order:
+    return 'Buyurtma topilmadi'
+
+  # Vaqtinchalik fayl ochib berish
+  cart_items = []
+  for line in order['items_text'].split('\n'):
+    if ' - ' in line:
+      try:
+        parts = line.split(' - ')
+        p_name = parts[0].strip()
+        q_part = parts[1].split('x')[0].strip()
+        qty = float(q_part)
+        s_part = parts[1].split('=')[1].replace('so\'m', '').strip()
+        summa = float(s_part.replace(',', ''))
+        price = summa / qty if qty > 0 else 0
+        cart_items.append({'name': p_name, 'qty': qty, 'price': price})
+      except:
+        pass
+
+  excel_file = create_excel_invoice(
+      order_id,
+      order['shop_name'],
+      order['agent_name'],
+      order['date'],
+      order['price_type'] or 'optom',
+      cart_items,
+  )
+  return send_file(excel_file, as_attachment=True)
+
+
 @app.route('/export_excel')
 def export_excel():
-  if not session.get('logged_in'):
-    return redirect(url_for('login'))
   conn = get_db_connection()
-  orders = pd.read_sql_query('SELECT * FROM orders', conn)
-  shops = pd.read_sql_query('SELECT * FROM shops', conn)
-  products = pd.read_sql_query('SELECT * FROM products', conn)
+  df = pd.read_sql_query('SELECT * FROM orders', conn)
   conn.close()
-
   output = io.BytesIO()
   with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    orders.to_excel(writer, sheet_name='Buyurtmalar', index=False)
-    shops.to_excel(writer, sheet_name="Do'konlar", index=False)
-    products.to_excel(writer, sheet_name='Mahsulotlar', index=False)
+    df.to_excel(writer, index=False, sheet_name='Orders')
   output.seek(0)
-
   return send_file(
       output,
-      mimetype=(
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ),
+      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       as_attachment=True,
-      download_name='XojiAka_Factory_Data.xlsx',
+      download_name='orders_report.xlsx',
   )
 
 
-def run_telegram_bot():
-  while True:
-    try:
-      bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception as e:
-      print('Bot polling xatosi:', e)
+@app.route('/logout')
+def logout():
+  session.clear()
+  return redirect(url_for('operator_dashboard'))
+
+
+def run_flask():
+  init_web_db()
+  app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 
 def run_bot():
