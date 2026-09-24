@@ -19,6 +19,21 @@ import pandas as pd
 import telebot
 from telebot import types
 
+def keep_alive():
+    while True:
+        try:
+            # O'zingizning Render'dagi veb sahifangiz havolasini yozing
+            url = "https://sizning-saytingiz.onrender.com"
+            requests.get(url)
+            print("Ping yuborildi, server uyg'oq!")
+        except Exception as e:
+            print(f"Ping xatosi: {e}")
+        # Har 9 daqiqada bir marta (15 daqiqadan oldin)
+        time.sleep(540)
+
+# Dastur ishga tushganda fonda ishlatib yuborish
+threading.Thread(target=keep_alive, daemon=True).start()
+
 # --- SOZLAMALAR ---
 BOT_TOKEN = "8573337094:AAHH1kNQnNrJyMfG6d5z6IO8lgkS1UdurR8"
 ADMIN_ID = 6851851908
