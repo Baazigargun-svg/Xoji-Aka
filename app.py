@@ -23,7 +23,7 @@ def keep_alive():
     while True:
         try:
             # O'zingizning Render'dagi veb sahifangiz havolasini yozing
-            url = "https://sizning-saytingiz.onrender.com"
+            url = "https://xoji-aka.onrender.com/"
             requests.get(url)
             print("Ping yuborildi, server uyg'oq!")
         except Exception as e:
