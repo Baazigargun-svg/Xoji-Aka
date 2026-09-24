@@ -129,6 +129,7 @@ def init_web_db():
     )
 
   initial_shops = [
+      ('Vanselling', '', 'SEX Gulim'),
       ('Sherzod market', '', 'Uzgazoil qatori'),
       ('Qayumov Kamol', '', 'Murch boboga yetmasdan'),
       ('Akbar aka', '', 'Bekat murch bobo'),
