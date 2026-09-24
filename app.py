@@ -154,6 +154,7 @@ def init_web_db():
       ('Anjir Market', '', 'Movaro'),
       ('Sevimli Market', '', 'Yashil dunyo'),
       ('Abbos market', '', 'Yashil dunyo'),
+      ('777 Market', '', 'Yashil dunyo'),
       ('Dilya opa', '', 'Yashil dunyo'),
       ('Sanjar aka', '', 'Yashil dunyo'),
       ('Nur market', '', 'Yashil dunyo'),
