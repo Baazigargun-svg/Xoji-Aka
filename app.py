@@ -191,6 +191,11 @@ def init_web_db():
       ('Asilabonu', '', 'Boysun bekati yoni'),
       ('Norqulova Nargiza', '', 'Hayit ala uyi taraf'),
       ('Sherzod aka', '', 'Harbiy doʻkon'),
+      ('Bahor Market', '', 'Termiz tuman'),
+      ('Baraka Market', '', 'Termiz tuman'),
+      ('Farxod Market', '', 'Senter Kamaz'),
+      ('Ariqcha Market', '', 'Senter Kamaz'),
+      ('Xolida Market', '', 'Limon'),
   ]
   for s_name, s_phone, s_region in initial_shops:
     cursor.execute(
@@ -199,24 +204,27 @@ def init_web_db():
     )
 
   initial_products = [
-      ('Pelmen /300 gr', 'Boshqa', 1000, 6200, 14000.0, 14000.0),
-      ('Pelmen /500 gr', 'Boshqa', 1000, 9900, 24000.0, 24000.0),
-      ('Pelmen rasepnoy /kg', 'Boshqa', 1000, 19500, 46000.0, 46000.0),
-      ('Teftel /300 gr', 'Boshqa', 1000, 12000, 23000.0, 23000.0),
-      ('Pelmen ossarti /500 gr', 'Boshqa', 1000, 18000, 30000.0, 30000.0),
-      ('Pelmen ossarti /300 gr', 'Boshqa', 1000, 11500, 20000.0, 20000.0),
-      ('Golubtsi /500 gr', 'Boshqa', 1000, 14000, 25000.0, 25000.0),
-      ('Tok doʻlma /300 gr', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
-      ('Karam doʻlma /300 gr', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
-      ('Somsa kesilgan /800 gr', 'Boshqa', 1000, 6000.0, 17000.0, 17000.0),
-      ('Oʻrama xamir', 'Boshqa', 1000, 6000.0, 17000.0, 17000.0),
-      ('KFC', 'Boshqa', 1000, 27500, 30000.0, 30000.0),
-      ('KFC Gulim', 'Boshqa', 1000.0, 15000, 30000.0, 30000.0),
-      ('Osh masalliq 500 gr', 'Boshqa', 1000, 6000.0, 13000.0, 13000.0),
-      ('Osh masalliq 1 kg', 'Boshqa', 1000, 7000.0, 15000.0, 15000.0),
-      ('Lagʻmon', 'Boshqa', 10000, 2000.0, 6000.0, 6000.0),
-      ('Kotlet', 'Boshqa', 1000, 11000.0, 25000.0, 25000.0),
-      ('Lavash hamiri', 'Boshqa', 1000, 3800.0, 7000.0, 7000.0),
+      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0),
+      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0),
+      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0),
+      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0),
+      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0),
+      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0),
+      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0),
+      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
+      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
+      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0),
+      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0),
+      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0),
+      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0),
+      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
+      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0),
+      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0),
+      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
+      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0),
+      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
+      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0),
+      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 9000.0, 9000.0),
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana in initial_products:
     cursor.execute(
