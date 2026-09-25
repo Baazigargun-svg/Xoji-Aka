@@ -700,6 +700,30 @@ def finish_sex_income(message):
   if uid in user_steps:
     del user_steps[uid]
 
+# Bazadan telegram_id ni topib, chek jo'natuvchi universal funksiya
+def send_auto_invoice(client_name, order_details_text):
+  conn = get_db_connection()
+  client = conn.execute(
+      'SELECT telegram_id FROM clients WHERE name = ? OR shop_name = ?',
+      (client_name, client_name),
+  ).fetchone()
+  conn.close()
+
+  if client and client['telegram_id']:
+    tg_id = client['telegram_id']
+    try:
+      bot.send_message(
+          tg_id,
+          f'📄 **Sizning buyurtmangiz chek-fakturasi:**\n\n{order_details_text}',
+      )
+      print(f'Chek muvaffaqiyatli jo‘natildi: {tg_id}')
+    except Exception as e:
+      print(f"Xabar yuborishda xatolik ({tg_id}): {e}")
+  else:
+    print(
+        f"Diqqat: '{client_name}' bazadan topilmadi yoki Telegram ID si"
+        ' kiritilmagan!'
+    )
 
 @bot.message_handler(func=lambda message: message.text == '📋 Ombordagi Qoldiqlar')
 def sex_view_stock(message):
@@ -2671,6 +2695,10 @@ def web_add_order():
 
   final_sum = total_sum - discount
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+  send_auto_invoice(client_name, order_details_text)
+  ```python
+  # Bot orqali zakaz bazaga tushgach:
+  send_auto_invoice(client_name, order_details_text)  
 
   cursor = conn.cursor()
   cursor.execute(
