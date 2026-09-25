@@ -2696,7 +2696,7 @@ def web_add_order():
   final_sum = total_sum - discount
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
   send_auto_invoice(client_name, order_details_text)
-  ```python
+    
   # Bot orqali zakaz bazaga tushgach:
   send_auto_invoice(client_name, order_details_text)  
 
