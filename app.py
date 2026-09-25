@@ -35,7 +35,7 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "8573337094:AAHH1kNQnNrJyMfG6d5z6IO8lgkS1UdurR8"
+BOT_TOKEN = "8573337094:AAHR8_0QBjohJ3RXk7m2WtoqjuivLclVBNQ"
 ADMIN_ID = 6851851908
 SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
