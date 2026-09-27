@@ -230,7 +230,7 @@ def init_web_db():
       ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
       ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
       ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 840000.0, 84000.0),
-      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 67000.0, 840000.0, 84000.0),
+      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 860000.0, 86000.0),
       ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
       ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
       ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
