@@ -1575,7 +1575,21 @@ def finish_order_with_comment(message):
         (stock_p - qty, prod['id']),
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
-
+# --- QO'SHILISHI KERAK BO'LGAN QISM ---
+  # Do'konning qarzini buyurtma summasiga oshiramiz
+  shop_name = data['shop_name']
+  shop_res = conn.execute('SELECT debt FROM shops WHERE name = ?', (shop_name,)).fetchone()
+  current_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+  new_debt = current_debt + total_sum
+  
+  conn.execute(
+      'UPDATE shops SET debt = ? WHERE name = ?',
+      (new_debt, shop_name)
+  )
+  # -------------------------------------
+  agent_res = conn.execute(
+      'SELECT name FROM users WHERE tg_id = ?', (uid,)
+  ).fetchone()
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
   ).fetchone()
@@ -1588,7 +1602,7 @@ def finish_order_with_comment(message):
       " status, date, price_type, comment) VALUES (?, ?, ?, ?, 'Yangi', ?, ?,"
       ' ?)',
       (
-          data['shop_name'],
+          shop_name,
           agent_name,
           total_sum,
           items_text,
