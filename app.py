@@ -234,7 +234,7 @@ def init_web_db():
       ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
       ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
       ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
-      ('Ovsyanka mag'iz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
+      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
       ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0),
       
   ]
