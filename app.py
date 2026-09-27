@@ -197,6 +197,7 @@ def init_web_db():
       ('Farxod Market', '', 'Senter Kamaz'),
       ('Ariqcha Market', '', 'Senter Kamaz'),
       ('Xolida Market', '', 'Limon'),
+      ('7Я Market', '', 'indenim'),
   ]
   for s_name, s_phone, s_region in initial_shops:
     cursor.execute(
@@ -226,6 +227,16 @@ def init_web_db():
       ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
       ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0),
       ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 9000.0, 9000.0),
+      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
+      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
+      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 840000.0, 84000.0),
+      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 67000.0, 840000.0, 84000.0),
+      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
+      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
+      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
+      ('Ovsyanka mag'iz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
+      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0),
+      
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana in initial_products:
     cursor.execute(
