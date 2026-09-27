@@ -1816,6 +1816,55 @@ HTML_TEMPLATE = """
         .shop-row:hover { background-color: #f1f5f9 !important; }
         .product-row { cursor: pointer; }
         .product-row:hover { background-color: #f1f5f9 !important; }
+        @media (max-width: 768px) {
+        .d-flex {
+            flex-direction: column !important;
+        }
+        .sidebar {
+            width: 100% !important;
+            min-height: auto !important;
+        }
+        .sidebar .nav {
+            flex-direction: row;
+            overflow-x: auto;
+            padding: 5px;
+        }
+        .sidebar .nav-link {
+            font-size: 10px;
+            padding: 8px 10px;
+            margin: 2px;
+        }
+        .sidebar .nav-link i {
+            font-size: 16px;
+            margin-bottom: 0;
+        }
+        .brand-logo-container {
+            display: none; 
+        }
+        .top-bar {
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch !important;
+        }
+        .top-bar form {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            margin-bottom: 10px;
+        }
+    }
+
+    .table-responsive {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table.table {
+        white-space: nowrap;
+    }
+    /* ----------------------------------------------- */
     </style>
 </head>
 <body>
