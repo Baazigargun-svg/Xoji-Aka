@@ -2911,10 +2911,6 @@ def login():
         </form>
     '''
 
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('login'))
 
 @app.route('/print_nakladnoy')
 def print_multiple_nakladnoy():
