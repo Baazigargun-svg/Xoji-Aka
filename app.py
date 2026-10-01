@@ -2788,28 +2788,6 @@ def print_combined_nakladnoy():
     )
 
 @app.route('/add_order', methods=['POST'])
-def add_order():
-    # --- 1. SIZNING BAZAGA YOZISH KODINGIZ ---
-    # (Formadan kelgan ma'lumotlarni bazaga saqlaysiz va yangi order_id olasiz)
-    # ...
-    new_order_id = 101  # Misol uchun saqlangan buyurtma ID raqami
-    
-    # --- 2. BOT ORQALI SEX GURUHIGA XABAR YUBORISH ---
-    SEX_GROUP_ID = -100123456789  # <--- Sex guruhingizning Telegram ID raqamini yozing!
-    
-    try:
-        # Bot orqali guruhga xabar yuborish
-        bot.send_message(
-            SEX_GROUP_ID, 
-            f"📦 **Yangi buyurtma tushdi!**\n\nBuyurtma raqami: #{new_order_id}\nIltimos, yig'ishni boshlang!",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        print(f"Botga xabar yuborishda xatolik: {e}")
-        
-    return redirect(url_for('index'))
-
-@app.route('/add_order', methods=['POST'])
 def web_add_order():
   shop_name = request.form.get('shop_name')
   agent_name = request.form.get('agent_name', 'Admin (Web)')
@@ -2846,6 +2824,19 @@ def web_add_order():
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = total_sum - discount
+
+  # Do'konning qarzini yangi buyurtma summasiga oshiramiz
+  shop_res = conn.execute(
+      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
+  ).fetchone()
+  current_debt = (
+      shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+  )
+  new_debt = current_debt + final_sum
+  conn.execute(
+      'UPDATE shops SET debt = ? WHERE name = ?', (new_debt, shop_name)
+  )
+
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
@@ -2868,18 +2859,19 @@ def web_add_order():
   conn.commit()
   conn.close()
 
+  # Sex guruhiga xabar yuborish
   try:
     group_text = (
-        f"📝 <b>YANGI WEB BUYURTMA (#{order_id})</b>\n"
+        f'📝 <b>YANGI WEB BUYURTMA (#{order_id})</b>\n'
         f"🏪 <b>Do'kon:</b> {shop_name}\n"
-        f"👤 <b>Operator:</b> {agent_name}\n"
-        f"💬 <b>Izoh:</b> {comment}\n"
-        f"💰 <b>Jami summa:</b> {final_sum:,.0f} so'm\n\n"
-        f"<b>Mahsulotlar:</b>\n{items_text}"
+        f'👤 <b>Operator:</b> {agent_name}\n'
+        f'💬 <b>Izoh:</b> {comment}\n'
+        f'💰 <b>Jami summa:</b> {final_sum:,.0f} so\'m\n\n'
+        f'<b>Mahsulotlar:</b>\n{items_text}'
     )
     bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
-  except:
-    pass
+  except Exception as e:
+    print('Web buyurtmani guruhga yuborish xatosi:', e)
 
   return redirect(url_for('operator_dashboard'))
 
