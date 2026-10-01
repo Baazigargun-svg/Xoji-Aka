@@ -199,6 +199,9 @@ def init_web_db():
       ('Ariqcha Market', '', 'Senter Kamaz'),
       ('Xolida Market', '', 'Limon'),
       ('7Я Market', '', 'indenim'),
+      ('Jahon Market', '', 'indenim'),
+      ('Abrayev Oral Market', '', '5-daha doktar A'),
+      ('Abidov Jamshid', '', 'Yashil dunyo Tisu yoni'),
   ]
   for s_name, s_phone, s_region in initial_shops:
     cursor.execute(
