@@ -2631,7 +2631,7 @@ def restrict_access():
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET'], endpoint='index')
 def operator_dashboard():
   start_date = request.args.get(
       'start_date', datetime.now().strftime('%Y-%m-%d')
