@@ -1,4 +1,6 @@
+import io
 import threading
+import os
 from flask import Flask
 
 from database import init_web_db, ADMIN_ID
@@ -11,14 +13,21 @@ app.secret_key = 'xoji_aka_maxfiy_kalit_2026'
 # Flask Blueprint orqali web marshrularni ulaymiz
 app.register_blueprint(web_bp)
 
+def run_bot():
+  while True:
+    try:
+      bot.remove_webhook()
+      bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except Exception as e:
+      print(f"Bot polling xatosi: {e}")
+
+
 if __name__ == '__main__':
-    # 1. Bazani rejimda tekshirib, jadval va adminni yaratamiz
-    init_web_db(ADMIN_ID)
-    
-    # 2. Telegram Botni orqa fonda (background thread) yoqamiz
-    bot_thread = threading.Thread(target=bot.polling, kwargs={'none_stop': True})
-    bot_thread.daemon = True
-    bot_thread.start()
-    
-    # 3. Web serverni yurgizamiz
-    app.run(host='0.0.0.0', port=5000)
+  init_web_db()
+
+  bot_thread = threading.Thread(target=run_bot)
+  bot_thread.daemon = True
+  bot_thread.start()
+
+  port = int(os.environ.get('PORT', 5000))
+  app.run(host='0.0.0.0', port=port, debug=False)
