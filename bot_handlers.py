@@ -5,7 +5,7 @@ import os
 from database import get_db_connection, ADMIN_ID
 from excel_utils import create_excel_invoice, create_excel_sex_income
 
-BOT_TOKEN = "8573337094:AAE4Tp5OuQChvQ2jgUhK2qCqP7qCSlU9MzI"
+BOT_TOKEN = "8573337094:AAGhQXE6IheONVsJgxyLfpeyjAqY_xbtYJk"
 SEX_GROUP_ID = -1003936599812  
 
 bot = telebot.TeleBot(BOT_TOKEN)
