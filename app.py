@@ -516,7 +516,7 @@ def process_income_amount(message):
     
     # ADMIN_ID o'zgaruvchisi kodingizning bosh qismida aniqlangan deb qaraymiz
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"inc_ok_{message.chat.id}_{text}"))
+    markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f'inc_ok_{record_id}'))
     
     bot.send_message(ADMIN_ID, f"📥 **Yangi kirim so'rovi!**\n\nXodim: {user_name}\nSumma/Izoh: {text}", parse_mode="Markdown", reply_markup=markup)
     bot.reply_to(message, "So'rov adminga yuborildi. Admin tasdiqlagach kassaga qo'shiladi.")
@@ -1609,21 +1609,22 @@ def finish_order_with_comment(message):
         (stock_p - qty, prod['id']),
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
-# --- QO'SHILISHI KERAK BO'LGAN QISM ---
+
   # Do'konning qarzini buyurtma summasiga oshiramiz
   shop_name = data['shop_name']
-  shop_res = conn.execute('SELECT debt FROM shops WHERE name = ?', (shop_name,)).fetchone()
-  current_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-  new_debt = current_debt + total_sum
-  
-  conn.execute(
-      'UPDATE shops SET debt = ? WHERE name = ?',
-      (new_debt, shop_name)
-  )
-  # -------------------------------------
-  agent_res = conn.execute(
-      'SELECT name FROM users WHERE tg_id = ?', (uid,)
+  shop_res = conn.execute(
+      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
   ).fetchone()
+  current_debt = (
+      shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+  )
+  new_debt = current_debt + total_sum
+
+  conn.execute(
+      'UPDATE shops SET debt = ? WHERE name = ?', (new_debt, shop_name)
+  )
+
+  # Agent nomini aniqlash (takroriy so'rov olib tashlandi)
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
   ).fetchone()
@@ -1649,59 +1650,69 @@ def finish_order_with_comment(message):
   conn.commit()
   conn.close()
 
-  excel_file = create_excel_invoice(
-      order_id,
-      data['shop_name'],
-      agent_name,
-      bugun,
-      p_type,
-      excel_cart_items,
-      comment,
-  )
-
-  bot.send_message(
-      message.chat.id,
-      f'✅ Buyurtma qabul qilindi! Jami: {total_sum:,.0f} so\'m',
-      reply_markup=get_main_menu('agent'),
-  )
-  bot.send_message(
-      ADMIN_ID,
-      f"🔔 YANGI BUYURTMA (#{order_id}):\n\nDo'kon: {data['shop_name']}\nSumma:"
-      f" {total_sum:,.0f} so'm\nIzoh: {comment}",
-  )
-
-  with open(excel_file, 'rb') as doc:
-    bot.send_document(ADMIN_ID, doc, caption=f'📄 Nakladnoy (#{order_id})')
-  if os.path.exists(excel_file):
-    os.remove(excel_file)
+  admin_excel_file = None
+  group_excel_file = None
 
   try:
+    # 1. Admin uchun nakladnoy yaratish va yuborish
+    admin_excel_file = create_excel_invoice(
+        order_id,
+        data['shop_name'],
+        agent_name,
+        bugun,
+        p_type,
+        excel_cart_items,
+        comment,
+    )
+
+    bot.send_message(
+        message.chat.id,
+        f'✅ Buyurtma qabul qilindi! Jami: {total_sum:,.0f} so\'m',
+        reply_markup=get_main_menu('agent'),
+    )
+    bot.send_message(
+        ADMIN_ID,
+        f"🔔 YANGI BUYURTMA (#{order_id}):\n\nDo'kon: {data['shop_name']}\nSumma:"
+        f" {total_sum:,.0f} so'm\nIzoh: {comment}",
+    )
+
+    with open(admin_excel_file, 'rb') as doc:
+      bot.send_document(ADMIN_ID, doc, caption=f'📄 Nakladnoy (#{order_id})')
+
+    # 2. Sex / Zavsklad guruhi uchun xabar va nakladnoy yuborish
     group_text = (
-        f"📝 <b>YANGI BUYURTMA (#{order_id})</b>\n"
+        f'📝 <b>YANGI BUYURTMA (#{order_id})</b>\n'
         f"🏪 <b>Do'kon:</b> {data['shop_name']}\n"
-        f"👤 <b>Agent:</b> {agent_name}\n"
-        f"💬 <b>Izoh:</b> {comment}\n"
-        f"💰 <b>Jami summa:</b> {total_sum:,.0f} so'm\n\n"
-        f"<b>Mahsulotlar:</b>\n{items_text}"
+        f'👤 <b>Agent:</b> {agent_name}\n'
+        f'💬 <b>Izoh:</b> {comment}\n'
+        f'💰 <b>Jami summa:</b> {total_sum:,.0f} so\'m\n\n'
+        f'<b>Mahsulotlar:</b>\n{items_text}'
     )
     bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
-    with open(
-        create_excel_invoice(
-            order_id,
-            data['shop_name'],
-            agent_name,
-            bugun,
-            p_type,
-            excel_cart_items,
-            comment,
-        ),
-        'rb',
-    ) as doc_group:
+
+    group_excel_file = create_excel_invoice(
+        order_id,
+        data['shop_name'],
+        agent_name,
+        bugun,
+        p_type,
+        excel_cart_items,
+        comment,
+    )
+    with open(group_excel_file, 'rb') as doc_group:
       bot.send_document(
           SEX_GROUP_ID, doc_group, caption=f'📄 Nakladnoy (#{order_id})'
       )
+
   except Exception as e:
-    print('Guruhga yuborish xatosi:', e)
+    print('Buyurtmani yuborish xatosi:', e)
+
+  finally:
+    # Fayllar diskda qolib ketmasligi uchun ularni tozalaymiz
+    if admin_excel_file and os.path.exists(admin_excel_file):
+      os.remove(admin_excel_file)
+    if group_excel_file and os.path.exists(group_excel_file):
+      os.remove(group_excel_file)
 
   if uid in user_steps:
     del user_steps[uid]
