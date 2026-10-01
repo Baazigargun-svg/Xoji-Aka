@@ -504,8 +504,6 @@ def start_command(message):
         reply_markup=get_main_menu('guest'),
     )
 
-3-QISM: KASSAGA KIRIM QILISH QISMI (SHU YERDAN DAVOM ETASIZ)
-# ==========================================
 
 @bot.message_handler(func=lambda message: message.text == '💰 Kassaga Kirim Qilish')
 def ask_income_amount(message):
