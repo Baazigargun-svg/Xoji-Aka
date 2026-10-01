@@ -82,7 +82,27 @@ def init_web_db(admin_id=ADMIN_ID):
         inventory TEXT DEFAULT ''
     )''')
 
+    migrations = [
+        ("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Boshqa'", "category"),
+        ("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0", "cost_price"),
+        ("ALTER TABLE products ADD COLUMN optom_price REAL DEFAULT 0", "optom_price"),
+        ("ALTER TABLE products ADD COLUMN chakana_price REAL DEFAULT 0", "chakana_price"),
+        ("ALTER TABLE products ADD COLUMN stock REAL DEFAULT 0", "stock"),
+        ("ALTER TABLE shops ADD COLUMN visit_days TEXT DEFAULT ''", "visit_days"),
+        ("ALTER TABLE shops ADD COLUMN region TEXT DEFAULT ''", "region"),
+        ("ALTER TABLE shops ADD COLUMN landmark TEXT DEFAULT ''", "landmark"),
+        ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
+        ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
+        ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
+        ("ALTER TABLE orders ADD COLUMN comment TEXT DEFAULT ''", "comment"),
+    ]
+
+    for query, col in migrations:
+        try:
+            cursor.execute(query)
+        except:
+            pass
+
     cursor.execute("INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?, 'Admin', '', 'admin')", (admin_id,))
-    
     conn.commit()
     conn.close()
