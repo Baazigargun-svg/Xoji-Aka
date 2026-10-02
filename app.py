@@ -120,6 +120,7 @@ def init_web_db():
   initial_agents = [
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
+      (6431126337, "Asror", "+998912360777", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
