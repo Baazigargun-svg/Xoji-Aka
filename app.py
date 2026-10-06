@@ -230,6 +230,7 @@ def init_web_db():
       ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
       ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0),
       ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
+      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0),
       ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0),
       ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0),
       ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
