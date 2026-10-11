@@ -20,7 +20,7 @@ import telebot
 from telebot import types
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "8573337094:AAFe-tPA-zv9an70Isdq64IgDgkv7AZ0e7I"
+BOT_TOKEN = ""
 ADMIN_ID = 6851851908
 SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
@@ -451,13 +451,25 @@ def get_main_menu(role):
         types.KeyboardButton("💰 Qarz/To'lov yozish"),
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
     )
-    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'sex':
     markup.row(
         types.KeyboardButton('📦 Skladga Mahsulot Kirim Qilish'),
         types.KeyboardButton('📋 Ombordagi Qoldiqlar'),
     )
-    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+  elif role == 'zavsklad':
+    markup.row(
+        types.KeyboardButton('📦 Yig‘ilgan Yaxlit Buyurtmalar'),
+        types.KeyboardButton('📋 Ombordagi Qoldiqlar'),
+    )
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+  elif role == 'ekspeditor':
+    markup.row(
+        types.KeyboardButton('🚚 Yetkazilishi Kerak Buyurtmalar'),
+        types.KeyboardButton('📜 Yetkazilgan Buyurtmalar Tarixi'),
+    )
+    markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   else:
     markup.add(types.KeyboardButton("📝 Ro'yxatdan o'tish"))
   return markup
@@ -485,12 +497,16 @@ def start_command(message):
           message.chat.id,
           f"Salom {name}. So'rovingiz admin tasdig'ini kutyapti.",
       )
-    elif ',' in role:
+    elif ',' in role or len(role.split(',')) > 1 or role in ['agent,sex', 'zavsklad', 'ekspeditor']:
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       if 'agent' in role:
         markup.add(types.KeyboardButton('👤 Agent rejimi'))
       if 'sex' in role:
         markup.add(types.KeyboardButton('🏭 Sex rejimi'))
+      if 'zavsklad' in role or role == 'zavsklad':
+        markup.add(types.KeyboardButton('📦 Zavsklad rejimi'))
+      if 'ekspeditor' in role or role == 'ekspeditor':
+        markup.add(types.KeyboardButton('🚚 Ekspeditor rejimi'))
       bot.send_message(
           message.chat.id,
           f'Salom {name}! Iltimos, ish rejimini tanlang:',
@@ -520,7 +536,6 @@ def process_income_amount(message):
     text = message.text
     user_name = message.from_user.first_name
     
-    # ADMIN_ID o'zgaruvchisi kodingizning bosh qismida aniqlangan deb qaraymiz
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f'inc_ok_{record_id}'))
     
@@ -533,20 +548,13 @@ def approve_income(call):
     worker_chat_id = data_parts[2]
     income_text = data_parts[3]
     
-    # Sizda get_db_connection() bor ekan, bazaga shu tarzda yozib qo'yasiz:
-    # conn = get_db_connection()
-    # conn.execute("INSERT INTO incomes (details) VALUES (?)", (income_text,))
-    # conn.commit()
-    # conn.close()
-    
     bot.answer_callback_query(call.id, "Kirim muvaffaqiyatli tasdiqlandi!")
     bot.edit_message_text(f"✅ **Tasdiqlandi va bajarildi!**\n\n{call.message.text}", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    
     bot.send_message(worker_chat_id, f"✅ Siz kiritgan kirim ({income_text}) admin tomonidan tasdiqlandi!")
 
 @bot.message_handler(
     func=lambda message: message.text
-    in ['👤 Agent rejimi', '🏭 Sex rejimi', '🔄 Rolni almashtirish (Sex / Agent)']
+    in ['👤 Agent rejimi', '🏭 Sex rejimi', '📦 Zavsklad rejimi', '🚚 Ekspeditor rejimi', '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)']
 )
 def switch_role_menu(message):
   tg_id = message.from_user.id
@@ -560,31 +568,174 @@ def switch_role_menu(message):
     return
 
   role_str = user['role']
-  if message.text == '👤 Agent rejimi' or (
-      'agent' in role_str and 'sex' in role_str and message.text != '🏭 Sex rejimi'
-  ):
-    if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       markup.add(
           types.KeyboardButton('👤 Agent rejimi'),
           types.KeyboardButton('🏭 Sex rejimi'),
+          types.KeyboardButton('📦 Zavsklad rejimi'),
+          types.KeyboardButton('🚚 Ekspeditor rejimi'),
       )
       bot.send_message(
           message.chat.id, 'Qaysi rejimga oʻtmoqchisiz?', reply_markup=markup
       )
       return
 
-    bot.send_message(
-        message.chat.id,
-        '🛒 Agent rejimiga oʻtdingiz.',
-        reply_markup=get_main_menu('agent'),
-    )
+  if message.text == '👤 Agent rejimi':
+    bot.send_message(message.chat.id, '🛒 Agent rejimiga oʻtdingiz.', reply_markup=get_main_menu('agent'))
   elif message.text == '🏭 Sex rejimi':
-    bot.send_message(
-        message.chat.id,
-        '🏭 Sex rejimiga oʻtdingiz.',
-        reply_markup=get_main_menu('sex'),
+    bot.send_message(message.chat.id, '🏭 Sex rejimiga oʻtdingiz.', reply_markup=get_main_menu('sex'))
+  elif message.text == '📦 Zavsklad rejimi':
+    bot.send_message(message.chat.id, '📦 Zavsklad rejimiga oʻtdingiz.', reply_markup=get_main_menu('zavsklad'))
+  elif message.text == '🚚 Ekspeditor rejimi':
+    bot.send_message(message.chat.id, '🚚 Ekspeditor rejimiga oʻtdingiz.', reply_markup=get_main_menu('ekspeditor'))
+
+
+# --- ZAVSKLAD VA EKSPEDITOR BOT QISMI ---
+@bot.message_handler(func=lambda message: message.text == '📦 Yig‘ilgan Yaxlit Buyurtmalar')
+def zavsklad_view_orders(message):
+    conn = get_db_connection()
+    orders = conn.execute("SELECT id, shop_name, total_sum, status, items_text FROM orders WHERE status = 'Yangi' ORDER BY id DESC").fetchall()
+    conn.close()
+    if not orders:
+        bot.send_message(message.chat.id, "Hozirda yig'ish uchun Yangi buyurtmalar mavjud emas.")
+        return
+    
+    text = "📦 **Yangi tushgan buyurtmalar (Yig'ish uchun):**\n\n"
+    for o in orders:
+        text += f"🆔 **#{o['id']}** | Do'kon: {o['shop_name']} | Jami: {o['total_sum']:,.0f} so'm\n"
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔗 Barcha yangi buyurtmalarni bitta yaxlit qilish va guruhga yuborish", callback_data="zav_combine_orders"))
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == "zav_combine_orders")
+def zavsklad_combine_and_send(call):
+    conn = get_db_connection()
+    orders = conn.execute("SELECT * FROM orders WHERE status = 'Yangi'").fetchall()
+    if not orders:
+        bot.answer_callback_query(call.id, "Yig'ish uchun buyurtmalar yo'q!")
+        conn.close()
+        return
+    
+    # Barcha yangi buyurtma mahsulotlarini bitta yaxlit hisobotga jamlaymiz
+    combined_items = {}
+    total_general_sum = 0
+    order_ids = []
+    
+    for o in orders:
+        order_ids.append(str(o['id']))
+        total_general_sum += o['total_sum']
+        for line in o['items_text'].split('\n'):
+            if line.strip():
+                parts = line.split(' - ')
+                p_name = parts[0]
+                try:
+                    qty_str = parts[1].split('x')[0].strip()
+                    qty = float(qty_str)
+                    combined_items[p_name] = combined_items.get(p_name, 0) + qty
+                except:
+                    pass
+
+    cart_items_list = [{'name': k, 'qty': v, 'price': 0} for k, v in combined_items.items()]
+    bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    # Excel fayl yaratamiz
+    excel_file = create_excel_invoice("Yaxlit_" + "_".join(order_ids), "Barcha Do'konlar", "Zavsklad", bugun, "optom", cart_items_list, "Yaxlit yig'ma buyurtma")
+    
+    items_text_str = ""
+    for k, v in combined_items.items():
+        items_text_str += f"🔹 {k} — {v} ta/kg\n"
+        
+    group_text = (
+        f"📦 **YAXLIT YIG'MA BUYURTMA (Zavsklad tomonidan)**\n"
+        f"📅 **Sana:** {bugun}\n"
+        f"🔖 **Buyurtma ID lari:** {', '.join(order_ids)}\n\n"
+        f"**Umumiy yig'ilgan mahsulotlar:**\n{items_text_str}\n"
+        f"💰 **Jami umumiy summa:** {total_general_sum:,.0f} so'm"
     )
+    
+    try:
+        bot.send_message(SEX_GROUP_ID, group_text, parse_mode="Markdown")
+        with open(excel_file, 'rb') as doc_group:
+            bot.send_document(SEX_GROUP_ID, doc_group, caption="📄 Yaxlit Yig'ma Nakladnoy (Excel)")
+        bot.answer_callback_query(call.id, "Yaxlit buyurtma muvaffaqiyatli guruhga yuborildi!")
+        bot.send_message(call.message.chat.id, "✅ Yaxlit buyurtma matn va Excel ko'rinishida guruhga yuborildi!")
+    except Exception as e:
+        print("Zavsklad yuborish xatosi:", e)
+        bot.answer_callback_query(call.id, "Xatolik yuz berdi!")
+        
+    if os.path.exists(excel_file):
+        os.remove(excel_file)
+    conn.close()
+
+
+@bot.message_handler(func=lambda message: message.text == '🚚 Yetkazilishi Kerak Buyurtmalar')
+def ekspeditor_view_orders(message):
+    conn = get_db_connection()
+    orders = conn.execute("SELECT id, shop_name, total_sum, items_text FROM orders WHERE status = 'Otgruzka' ORDER BY id DESC").fetchall()
+    conn.close()
+    if not orders:
+        bot.send_message(message.chat.id, "Hozirda yetkazishga tayyor (Otgruzka holatidagi) buyurtmalar yo'q.")
+        return
+    
+    for o in orders:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✅ Yetkazilganini Tasdiqlash", callback_data=f"eksp_deliver_{o['id']}"))
+        text = (
+            f"🚚 **Buyurtma ID: #{o['id']}**\n"
+            f"🏪 Do'kon: {o['shop_name']}\n"
+            f"💰 Summa: {o['total_sum']:,.0f} so'm\n\n"
+            f"Tafsilot:\n{o['items_text']}"
+        )
+        bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('eksp_deliver_'))
+def ekspeditor_confirm_delivery(call):
+    order_id = int(call.data.split('_')[-1])
+    conn = get_db_connection()
+    order = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+    
+    if not order:
+        bot.answer_callback_query(call.id, "Buyurtma topilmadi!")
+        conn.close()
+        return
+        
+    if order['status'] == 'Yetkazildi':
+        bot.answer_callback_query(call.id, "Bu buyurtma allaqachon yetkazilgan!")
+        conn.close()
+        return
+        
+    shop_name = order['shop_name']
+    order_sum = order['total_sum']
+    
+    # STATUSNI 'Yetkazildi' ga o'tkazamiz va faqat SHUNDAN KEYIN do'kon qarzini qo'shamiz!
+    conn.execute("UPDATE orders SET status = 'Yetkazildi' WHERE id = ?", (order_id,))
+    
+    shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
+    curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+    new_debt = curr_debt + order_sum
+    
+    conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (new_debt, shop_name))
+    
+    bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+    conn.execute("INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, 'Yetkazildi', ?)", (order_id, bugun))
+    conn.commit()
+    conn.close()
+    
+    bot.answer_callback_query(call.id, "Buyurtma yetkazildi deb tasdiqlandi va do'kon qarzdorligi yangilandi!")
+    bot.edit_message_text(f"✅ **Yetkazildi va tasdiqlandi!** (#{order_id})\nDo'kon qarzdorligi hisoblandi.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
+
+@bot.message_handler(func=lambda message: message.text == '📜 Yetkazilgan Buyurtmalar Tarixi')
+def ekspeditor_history(message):
+    conn = get_db_connection()
+    orders = conn.execute("SELECT id, shop_name, total_sum, date FROM orders WHERE status = 'Yetkazildi' ORDER BY id DESC LIMIT 10").fetchall()
+    conn.close()
+    text = "📜 **Oxirgi yetkazilgan buyurtmalar:**\n\n"
+    for o in orders:
+        text += f"🆔 #{o['id']} | {o['shop_name']} | {o['total_sum']:,.0f} so'm | {o['date']}\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
 @bot.message_handler(
@@ -610,7 +761,7 @@ def send_sex_product_menu(message):
   for p in prods:
     markup.add(types.KeyboardButton(p['name']))
   markup.add(types.KeyboardButton('✅ Kirimni yakunlash'))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   msg = bot.send_message(
       message.chat.id,
       '🏭 Kirim qilinadigan mahsulotni tanlang:',
@@ -620,7 +771,7 @@ def send_sex_product_menu(message):
 
 
 def sex_income_choose_product(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
     switch_role_menu(message)
     return
   if message.text == '✅ Kirimni yakunlash':
@@ -987,7 +1138,7 @@ def admin_other_sections(message):
     for a in agents:
       status = (
           '✅ Faol'
-          if any(r in a['role'] for r in ['agent', 'sex'])
+          if any(r in a['role'] for r in ['agent', 'sex', 'zavsklad', 'ekspeditor'])
           else '⏳ Kutilmoqda'
       )
       text += f"👤 {a['name']} ({a['phone']}) - [{a['role']}] - {status}\n"
@@ -1043,6 +1194,19 @@ def change_status_logic(call):
   }
   new_status = status_map[mode]
   conn = get_db_connection()
+  
+  # Agar status Yetkazilsa va oldin Yetkazildi bo'lmagan bo'lsa qarzdorlikni qo'shamiz
+  if new_status == 'Yetkazildi':
+      ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+      if ord_data and ord_data['status'] != 'Yetkazildi':
+          shop_name = ord_data['shop_name']
+          order_sum = ord_data['total_sum']
+          
+          shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
+          curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+          new_debt = curr_debt + order_sum
+          conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (new_debt, shop_name))
+
   conn.execute(
       'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
   )
@@ -1151,7 +1315,6 @@ def update_product(prod_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# --- WEB: SKLADNI QOLDIQNI +- QILISH (3-TALAB) ---
 @app.route('/adjust_stock_web', methods=['POST'])
 def adjust_stock_web():
   prod_id = request.form.get('prod_id')
@@ -1373,7 +1536,6 @@ def web_delete_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# --- TELEGRAM BOT: KATEGORIYA VA KOMMENTARIYA BILAN BUYURTMA URISH (1 va 2-TALAB) ---
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order(message):
   conn = get_db_connection()
@@ -1385,13 +1547,13 @@ def start_order(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for s in shops:
     markup.add(types.KeyboardButton(s['name']))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
   bot.register_next_step_handler(msg, choose_price_type)
 
 
 def choose_price_type(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
     switch_role_menu(message)
     return
   user_steps[message.from_user.id] = {
@@ -1403,7 +1565,7 @@ def choose_price_type(message):
       types.KeyboardButton('💰 Ulgurji (Optom)'),
       types.KeyboardButton('🛍 Chakana'),
   )
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   msg = bot.send_message(
       message.chat.id, 'Narx turini tanlang:', reply_markup=markup
   )
@@ -1411,7 +1573,7 @@ def choose_price_type(message):
 
 
 def show_categories_to_agent(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
     switch_role_menu(message)
     return
   p_type = 'optom' if 'Ulgurji' in message.text else 'chakana'
@@ -1428,7 +1590,7 @@ def show_categories_to_agent(message):
     cat_name = c['category'] if c['category'] else 'Boshqa'
     markup.add(types.KeyboardButton(f'📁 {cat_name}'))
   markup.add(types.KeyboardButton('✅ Buyurtmani yakunlash'))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
 
   msg = bot.send_message(
       message.chat.id,
@@ -1439,7 +1601,7 @@ def show_categories_to_agent(message):
 
 
 def choose_product_category(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
     switch_role_menu(message)
     return
   if message.text == '✅ Buyurtmani yakunlash':
@@ -1456,7 +1618,6 @@ def choose_product_category(message):
   conn.close()
 
   if not prods:
-    # Agar bu kategoriya bo'yicha mahsulot topilmasa, barchasini ko'rsatamiz
     conn = get_db_connection()
     prods = conn.execute('SELECT name FROM products').fetchall()
     conn.close()
@@ -1536,7 +1697,6 @@ def add_to_cart(message):
     user_steps[uid]['cart'][p_name] = qty
     bot.send_message(message.chat.id, f'📥 Qo\'shildi: {p_name} - {qty}')
 
-    # Mahsulot qo'shilgach, yana o'sha kategoriyadagi mahsulotlarni tanlashga qaytamiz
     cat_name = user_steps[uid].get('current_category', 'Boshqa')
     conn = get_db_connection()
     prods = conn.execute(
@@ -1558,7 +1718,7 @@ def add_to_cart(message):
     bot.register_next_step_handler(msg, ask_quantity_or_navigation)
   except:
     bot.send_message(message.chat.id, '❌ Xatolik! Faqat raqam kiriting.')
-    choose_categories_to_agent_again(message)
+    show_categories_to_agent_again(message)
 
 
 def ask_order_comment(message):
@@ -1572,7 +1732,7 @@ def ask_order_comment(message):
 
   msg = bot.send_message(
       message.chat.id,
-      "📝 Buyurtma uchun **kommentariya (izoh)** yozing (masalan: <i>'Ertalabga yetkazilsin'</i> yoki <i>'Yoq bo'lsa Yo'q deb yuboring'</i>):",
+      "📝 Buyurtma uchun **kommentariya (izoh)** yozing (masalan: <i>'Ertalabga yetkazilsin'</i>):",
       parse_mode='HTML',
       reply_markup=types.ReplyKeyboardRemove(),
   )
@@ -1616,21 +1776,9 @@ def finish_order_with_comment(message):
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  # Do'konning qarzini buyurtma summasiga oshiramiz
+  # MUHIM: Do'kon qarzini hozirCHA QO'SHMAYMIZ (yetkazilgandan keyin qo'shiladi)!
   shop_name = data['shop_name']
-  shop_res = conn.execute(
-      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
-  ).fetchone()
-  current_debt = (
-      shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-  )
-  new_debt = current_debt + total_sum
 
-  conn.execute(
-      'UPDATE shops SET debt = ? WHERE name = ?', (new_debt, shop_name)
-  )
-
-  # Agent nomini aniqlash (takroriy so'rov olib tashlandi)
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
   ).fetchone()
@@ -1660,7 +1808,6 @@ def finish_order_with_comment(message):
   group_excel_file = None
 
   try:
-    # 1. Admin uchun nakladnoy yaratish va yuborish
     admin_excel_file = create_excel_invoice(
         order_id,
         data['shop_name'],
@@ -1685,7 +1832,6 @@ def finish_order_with_comment(message):
     with open(admin_excel_file, 'rb') as doc:
       bot.send_document(ADMIN_ID, doc, caption=f'📄 Nakladnoy (#{order_id})')
 
-    # 2. Sex / Zavsklad guruhi uchun xabar va nakladnoy yuborish
     group_text = (
         f'📝 <b>YANGI BUYURTMA (#{order_id})</b>\n'
         f"🏪 <b>Do'kon:</b> {data['shop_name']}\n"
@@ -1714,7 +1860,6 @@ def finish_order_with_comment(message):
     print('Buyurtmani yuborish xatosi:', e)
 
   finally:
-    # Fayllar diskda qolib ketmasligi uchun ularni tozalaymiz
     if admin_excel_file and os.path.exists(admin_excel_file):
       os.remove(admin_excel_file)
     if group_excel_file and os.path.exists(group_excel_file):
@@ -1779,13 +1924,13 @@ def pay_debt_start(message):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for s in shops:
     markup.add(types.KeyboardButton(s['name']))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent)'))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
   bot.register_next_step_handler(msg, ask_payment_amount)
 
 
 def ask_payment_amount(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent)':
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
     switch_role_menu(message)
     return
   shop_name = message.text
@@ -1868,54 +2013,18 @@ HTML_TEMPLATE = """
         .product-row { cursor: pointer; }
         .product-row:hover { background-color: #f1f5f9 !important; }
         @media (max-width: 768px) {
-        .d-flex {
-            flex-direction: column !important;
-        }
-        .sidebar {
-            width: 100% !important;
-            min-height: auto !important;
-        }
-        .sidebar .nav {
-            flex-direction: row;
-            overflow-x: auto;
-            padding: 5px;
-        }
-        .sidebar .nav-link {
-            font-size: 10px;
-            padding: 8px 10px;
-            margin: 2px;
-        }
-        .sidebar .nav-link i {
-            font-size: 16px;
-            margin-bottom: 0;
-        }
-        .brand-logo-container {
-            display: none; 
-        }
-        .top-bar {
-            flex-direction: column;
-            gap: 10px;
-            align-items: stretch !important;
-        }
-        .top-bar form {
-            width: 100%;
-            flex-wrap: wrap;
-        }
-        .stat-box {
-            margin-bottom: 10px;
-        }
+        .d-flex { flex-direction: column !important; }
+        .sidebar { width: 100% !important; min-height: auto !important; }
+        .sidebar .nav { flex-direction: row; overflow-x: auto; padding: 5px; }
+        .sidebar .nav-link { font-size: 10px; padding: 8px 10px; margin: 2px; }
+        .sidebar .nav-link i { font-size: 16px; margin-bottom: 0; }
+        .brand-logo-container { display: none; }
+        .top-bar { flex-direction: column; gap: 10px; align-items: stretch !important; }
+        .top-bar form { width: 100%; flex-wrap: wrap; }
+        .stat-box { margin-bottom: 10px; }
     }
-
-    .table-responsive {
-        width: 100%;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    table.table {
-        white-space: nowrap;
-    }
-    /* ----------------------------------------------- */
+    .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table.table { white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -2190,7 +2299,6 @@ HTML_TEMPLATE = """
                                                 <td><span class="badge bg-success fs-6">{{ p['stock'] }}</span></td>
                                                 <td>{{ "{:,.0f}".format(p['optom_price']) }}</td>
                                                 <td>
-                                                    <!-- 3-TALAB: Skladni +- qilish sahifasi/formasi -->
                                                     <form action="/adjust_stock_web" method="POST" class="d-flex gap-1 align-items-center">
                                                         <input type="hidden" name="prod_id" value="{{ p['id'] }}">
                                                         <input type="number" step="any" name="qty" class="form-control form-control-sm" placeholder="Miqdor" required style="width: 70px;">
@@ -2285,7 +2393,7 @@ HTML_TEMPLATE = """
                     <div class="row g-4">
                         <div class="col-md-4">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Yangi Agent / Sex Xodimi Qo'shish</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Yangi Xodim Qo'shish</h5>
                                 <form action="/add_agent_web" method="POST">
                                     <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
@@ -2295,7 +2403,9 @@ HTML_TEMPLATE = """
                                         <select name="role" class="form-select">
                                             <option value="agent">Agent</option>
                                             <option value="sex">Sex xodimi</option>
-                                            <option value="agent,sex">Agent va Sex xodimi (Ikkalas ham)</option>
+                                            <option value="zavsklad">Zavsklad</option>
+                                            <option value="ekspeditor">Ekspeditor</option>
+                                            <option value="agent,sex">Agent va Sex xodimi</option>
                                         </select>
                                     </div>
                                     <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
@@ -2304,7 +2414,7 @@ HTML_TEMPLATE = """
                         </div>
                         <div class="col-md-8">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Agentlar va Menegerlar Nazorati</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Xodimlar Nazorati</h5>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle">
                                         <thead><tr><th>F.I.O</th><th>Telefon</th><th>Telegram ID</th><th>Roli / Status</th><th>Amallar</th></tr></thead>
@@ -2316,11 +2426,12 @@ HTML_TEMPLATE = """
                                                 <td>{{ a['phone'] }}</td>
                                                 <td><code>{{ a['tg_id'] }}</code></td>
                                                 <td>
-                                                    {% if 'agent' in a['role'] and 'sex' in a['role'] %}<span class="badge bg-primary">Agent va Sex</span>
-                                                    {% elif a['role'] == 'agent' %}<span class="badge bg-success">Faol Agent</span>
+                                                    {% if a['role'] == 'agent' %}<span class="badge bg-success">Agent</span>
                                                     {% elif a['role'] == 'sex' %}<span class="badge bg-info text-dark">Sex xodimi</span>
-                                                    {% elif a['role'] == 'pending' %}<span class="badge bg-warning text-dark">Tasdiq kutyapti</span>
-                                                    {% else %}<span class="badge bg-secondary">{{ a['role'] }}</span>{% endif %}
+                                                    {% elif a['role'] == 'zavsklad' %}<span class="badge bg-warning text-dark">Zavsklad</span>
+                                                    {% elif a['role'] == 'ekspeditor' %}<span class="badge bg-primary">Ekspeditor</span>
+                                                    {% elif a['role'] == 'pending' %}<span class="badge bg-secondary text-dark">Tasdiq kutyapti</span>
+                                                    {% else %}<span class="badge bg-dark">{{ a['role'] }}</span>{% endif %}
                                                 </td>
                                                 <td>
                                                     {% if a['role'] == 'pending' %}
@@ -2375,12 +2486,6 @@ HTML_TEMPLATE = """
                             <div class="col-md-3 bg-light p-3 rounded"><small class="text-muted">Umumiy Rasxodlar (Chiqim)</small><h4 class="fw-bold text-danger mb-0">{{ "{:,.0f}".format(total_expense) }} so'm</h4></div>
                             <div class="col-md-3 bg-success bg-opacity-10 p-3 rounded border border-success"><small class="text-success fw-bold">Sof Foyda</small><h4 class="fw-bold text-success mb-0">{{ "{:,.0f}".format(net_profit) }} so'm</h4></div>
                         </div>
-                        <hr class="my-4">
-                        <div class="row g-3">
-                            <div class="col-md-4 bg-light p-3 rounded"><small class="text-muted">Jami Kassaga Kirgan Pul</small><h5 class="fw-bold text-success mb-0">{{ "{:,.0f}".format(total_income) }} so'm</h5></div>
-                            <div class="col-md-4 bg-light p-3 rounded"><small class="text-muted">Do'konlardagi Umumiy Qarz (Nasiya)</small><h5 class="fw-bold text-danger mb-0">{{ "{:,.0f}".format(total_debt) }} so'm</h5></div>
-                            <div class="col-md-4 bg-light p-3 rounded"><small class="text-muted">Hozirgi Kassa Qoldig'i</small><h5 class="fw-bold text-dark mb-0">{{ "{:,.0f}".format(kassa_balance) }} so'm</h5></div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -2394,21 +2499,18 @@ HTML_TEMPLATE = """
         <div class="modal-content">
             <form id="editShopForm" method="POST">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Do'kon Ma'lumotlarini Tahrirlash</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Do'konni Tahrirlash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label small fw-bold">Do'kon Nomi:</label><input type="text" name="name" id="edit_shop_name" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqami:</label><input type="text" name="phone" id="edit_shop_phone" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Nomi:</label><input type="text" name="name" id="edit_shop_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" id="edit_shop_phone" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" id="edit_shop_region" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" id="edit_shop_landmark" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Tashrif kunlari:</label><input type="text" name="visit_days" id="edit_shop_visit_days" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan Inventarlar:</label><input type="text" name="inventory" id="edit_shop_inventory" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Inventarlar:</label><input type="text" name="inventory" id="edit_shop_inventory" class="form-control"></div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
-                    <button type="submit" class="btn btn-primary btn-sm">O'zgarishlarni Saqlash</button>
-                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
             </form>
         </div>
     </div>
@@ -2430,12 +2532,9 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     <div class="mb-3"><label class="form-label small fw-bold">Chegirma (Skidka so'mda):</label><input type="number" step="any" name="discount" id="edit_order_discount" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Izoh (Kommentariya):</label><input type="text" name="comment" id="edit_order_comment" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Izoh:</label><input type="text" name="comment" id="edit_order_comment" class="form-control"></div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
-                    <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
-                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
             </form>
         </div>
     </div>
@@ -2457,10 +2556,7 @@ HTML_TEMPLATE = """
                     <div class="mb-3"><label class="form-label small fw-bold">Optom narx:</label><input type="number" step="any" name="optom_price" id="edit_prod_optom" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Chakana narx:</label><input type="number" step="any" name="chakana_price" id="edit_prod_chakana" class="form-control" required></div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Yopish</button>
-                    <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
-                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
             </form>
         </div>
     </div>
@@ -2468,32 +2564,19 @@ HTML_TEMPLATE = """
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    const productsData = [
-        {% for p in products %}
-        { name: "{{ p['name'] | e }}", stock: {{ p['stock'] or 0 }}, optom: {{ p['optom_price'] or 0 }} },
-        {% endfor %}
-    ];
-
     function toggleNewProd() {
         let sel = document.getElementById('p_sel');
         let div = document.getElementById('new_prod_div');
         let nameInp = document.getElementById('new_p_name');
-        if (sel.value === 'NEW') {
-            div.classList.remove('d-none');
-            nameInp.required = true;
-        } else {
-            div.classList.add('d-none');
-            nameInp.required = false;
-        }
+        if (sel.value === 'NEW') { div.classList.remove('d-none'); nameInp.required = true; }
+        else { div.classList.add('d-none'); nameInp.required = false; }
     }
-
     function toggleDay(el, day) {
         el.classList.toggle('selected');
         let badges = document.querySelectorAll('.day-badge.selected');
         let days = Array.from(badges).map(b => b.innerText);
         document.getElementById('visit_days_input').value = days.join(', ');
     }
-
     function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
         document.getElementById('editShopForm').action = '/update_shop/' + id;
         document.getElementById('edit_shop_name').value = name;
@@ -2504,7 +2587,6 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_inventory').value = inventory;
         new bootstrap.Modal(document.getElementById('editShopModal')).show();
     }
-
     function openEditProductModal(id, name, category, stock, cost, optom, chakana) {
         document.getElementById('editProductForm').action = '/update_product/' + id;
         document.getElementById('edit_prod_name').value = name;
@@ -2515,7 +2597,6 @@ HTML_TEMPLATE = """
         document.getElementById('edit_prod_chakana').value = chakana;
         new bootstrap.Modal(document.getElementById('editProductModal')).show();
     }
-
     function openEditOrderModal(id, shopName, discount, comment) {
         document.getElementById('editOrderForm').action = '/update_order/' + id;
         document.getElementById('edit_order_shop').value = shopName;
@@ -2523,108 +2604,64 @@ HTML_TEMPLATE = """
         document.getElementById('edit_order_comment').value = comment;
         new bootstrap.Modal(document.getElementById('editOrderModal')).show();
     }
-
     function filterShopsTable() {
         let input = document.getElementById('shopSearchInput').value.toLowerCase();
-        let rows = document.querySelectorAll('#shopsTable tbody tr');
-        rows.forEach(row => {
+        document.querySelectorAll('#shopsTable tbody tr').forEach(row => {
             row.style.display = row.innerText.toLowerCase().includes(input) ? '' : 'none';
         });
     }
-
     function filterProductsTable() {
         let input = document.getElementById('productSearchInput').value.toLowerCase();
-        let rows = document.querySelectorAll('#productsTable tbody tr');
-        rows.forEach(row => {
+        document.querySelectorAll('#productsTable tbody tr').forEach(row => {
             row.style.display = row.innerText.toLowerCase().includes(input) ? '' : 'none';
         });
     }
-
     function filterOrdersTable() {
         let statusFilter = document.getElementById('statusFilter').value;
         let search = document.getElementById('orderSearch').value.toLowerCase();
-        let rows = document.querySelectorAll('#ordersTable tbody tr');
-        rows.forEach(row => {
+        document.querySelectorAll('#ordersTable tbody tr').forEach(row => {
             let status = row.getAttribute('data-status');
             let text = row.innerText.toLowerCase();
-            let matchesStatus = !statusFilter || status === statusFilter;
-            let matchesSearch = !search || text.includes(search);
-            row.style.display = (matchesStatus && matchesSearch) ? '' : 'none';
+            row.style.display = ((!statusFilter || status === statusFilter) && (!search || text.includes(search))) ? '' : 'none';
         });
     }
-
     function filterShopDropdown() {
         let input = document.getElementById('orderShopSearchInput').value.toLowerCase();
-        let select = document.getElementById('orderShopSelect');
-        for (let option of select.options) {
+        for (let option of document.getElementById('orderShopSelect').options) {
             if (option.value === "") continue;
-            let text = option.text.toLowerCase();
-            option.style.display = text.includes(input) ? '' : 'none';
+            option.style.display = option.text.toLowerCase().includes(input) ? '' : 'none';
         }
     }
-
     function filterProductDropdown(inputElem) {
         let inputVal = inputElem.value.toLowerCase();
-        let row = inputElem.closest('.order-item-row');
-        let select = row.querySelector('.product-select-dropdown');
+        let select = inputElem.closest('.order-item-row').querySelector('.product-select-dropdown');
         for (let option of select.options) {
             if (option.value === "") continue;
-            let text = option.text.toLowerCase();
-            option.style.display = text.includes(inputVal) ? '' : 'none';
+            option.style.display = option.text.toLowerCase().includes(inputVal) ? '' : 'none';
         }
     }
-
     function addItemRow() {
         let container = document.getElementById('order-items-container');
-        let firstRow = container.querySelector('.order-item-row');
-        let newRow = firstRow.cloneNode(true);
+        let newRow = container.querySelector('.order-item-row').cloneNode(true);
         newRow.querySelector('.product-search-input').value = '';
         newRow.querySelector('select').selectedIndex = 0;
         newRow.querySelector('input[name="qty"]').value = '1';
         container.appendChild(newRow);
     }
-
     function removeRow(btn) {
-        let rows = document.querySelectorAll('.order-item-row');
-        if (rows.length > 1) {
+        if (document.querySelectorAll('.order-item-row').length > 1) {
             btn.closest('.order-item-row').remove();
             updateSelectedIds();
-        } else {
-            alert("Kamida bitta mahsulot bo'lishi kerak!");
-        }
+        } else { alert("Kamida bitta mahsulot bo'lishi kerak!"); }
     }
-
     function toggleSelectAllOrders(master) {
-        let checkboxes = document.querySelectorAll('.order-checkbox');
-        checkboxes.forEach(cb => { cb.checked = master.checked; });
+        document.querySelectorAll('.order-checkbox').forEach(cb => { cb.checked = master.checked; });
         updateSelectedIds();
     }
-
     function updateSelectedIds() {
-        let checkboxes = document.querySelectorAll('.order-checkbox:checked');
-        let ids = Array.from(checkboxes).map(cb => cb.value);
+        let ids = Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
         document.getElementById('selectedIdsInput').value = ids.join(',');
     }
-
-    {% if cat_chart_labels %}
-    const ctx = document.getElementById('categoryDonutChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: {{ cat_chart_labels | safe }},
-            datasets: [{
-                data: {{ cat_chart_data | safe }},
-                backgroundColor: {{ cat_chart_colors | safe }},
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } }
-        }
-    });
-    {% endif %}
 </script>
 </body>
 </html>
@@ -2632,16 +2669,13 @@ HTML_TEMPLATE = """
 
 @app.before_request
 def restrict_access():
-    # Login sahifasi va statik fayllarga ruxsat beramiz
     allowed_routes = ['login', 'static']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
 @app.route('/', methods=['GET'], endpoint='index')
 def operator_dashboard():
-  start_date = request.args.get(
-      'start_date', datetime.now().strftime('%Y-%m-%d')
-  )
+  start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-%d'))
   end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
 
   conn = get_db_connection()
@@ -2649,25 +2683,16 @@ def operator_dashboard():
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
 
-  orders_query = 'SELECT * FROM orders WHERE date LIKE ? ORDER BY id DESC'
-  orders = conn.execute(orders_query, (f'{start_date}%',)).fetchall()
+  orders = conn.execute('SELECT * FROM orders WHERE date LIKE ? ORDER BY id DESC', (f'{start_date}%',)).fetchall()
 
   formatted_orders = []
   for o in orders:
     o_dict = dict(o)
-    history = conn.execute(
-        'SELECT status, changed_at FROM order_status_history WHERE order_id = ?'
-        ' ORDER BY id',
-        (o['id'],),
-    ).fetchall()
+    history = conn.execute('SELECT status, changed_at FROM order_status_history WHERE order_id = ? ORDER BY id', (o['id'],)).fetchall()
     o_dict['history'] = [dict(h) for h in history]
     formatted_orders.append(o_dict)
 
-  daily_sum_res = conn.execute(
-      'SELECT SUM(total_sum) as s FROM orders WHERE date LIKE ? AND status !='
-      " 'Bekor'",
-      (f'{start_date}%',),
-  ).fetchone()
+  daily_sum_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE date LIKE ? AND status != 'Bekor'", (f'{start_date}%',)).fetchone()
   daily_sum = daily_sum_res['s'] if daily_sum_res and daily_sum_res['s'] else 0
 
   total_inc = conn.execute('SELECT SUM(amount) as s FROM incomes').fetchone()
@@ -2679,14 +2704,9 @@ def operator_dashboard():
   kassa_balance = inc_sum - exp_sum
 
   total_debt_res = conn.execute('SELECT SUM(debt) as s FROM shops').fetchone()
-  total_debt = (
-      total_debt_res['s'] if total_debt_res and total_debt_res['s'] else 0
-  )
+  total_debt = total_debt_res['s'] if total_debt_res and total_debt_res['s'] else 0
 
-  cat_data = conn.execute(
-      'SELECT category, SUM(stock * optom_price) as val FROM products GROUP BY'
-      ' category'
-  ).fetchall()
+  cat_data = conn.execute('SELECT category, SUM(stock * optom_price) as val FROM products GROUP BY category').fetchall()
   cat_table_data = []
   cat_chart_labels = []
   cat_chart_data = []
@@ -2700,30 +2720,13 @@ def operator_dashboard():
     color = colors[idx % len(colors)]
     cat_chart_labels.append(c_name)
     cat_chart_data.append(c_val)
-    cat_table_data.append({
-        'name': c_name,
-        'percent': percent,
-        'amount': c_val,
-        'color': color,
-    })
+    cat_table_data.append({'name': c_name, 'percent': percent, 'amount': c_val, 'color': color})
 
-  total_revenue_res = conn.execute(
-      "SELECT SUM(total_sum) as s FROM orders WHERE status != 'Bekor'"
-  ).fetchone()
-  total_revenue = (
-      total_revenue_res['s']
-      if total_revenue_res and total_revenue_res['s']
-      else 0
-  )
+  total_revenue_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE status != 'Bekor'").fetchone()
+  total_revenue = total_revenue_res['s'] if total_revenue_res and total_revenue_res['s'] else 0
 
-  total_cost_res = conn.execute(
-      'SELECT SUM(p.cost_price * o.total_sum / o.total_sum) as s FROM orders o'
-      ' JOIN products p'
-  ).fetchone()  # Approximate cost calculation placeholder
   total_cost = 0
-
-  net_profit = total_revenue - total_expense if 'total_expense' in locals() else 0
-
+  net_profit = total_revenue - exp_sum
   conn.close()
 
   return render_template_string(
@@ -2748,50 +2751,6 @@ def operator_dashboard():
       end_date=end_date,
   )
 
-@app.route('/print_combined_nakladnoy')
-def print_combined_nakladnoy():
-    # URL dan tanlangan buyurtma ID larini olamiz (Masalan: /print_combined_nakladnoy?ids=1,2,5)
-    ids_str = request.args.get('ids', '')
-    if not ids_str:
-        return "Buyurtmalar tanlanmagan!"
-    
-    order_ids = [int(i) for i in ids_str.split(',') if i.isdigit()]
-    
-    # Bazadan shu buyurtmalardagi mahsulotlarni olib, birxillarini jamlaymiz (SUM)
-    conn = sqlite3.connect('database.db') # O'z bazangiz nomini yozing
-    cursor = conn.cursor()
-    
-    placeholders = ','.join(['?'] * len(order_ids))
-    query = f"""
-        SELECT product_name, SUM(quantity) 
-        FROM order_items 
-        WHERE order_id IN ({placeholders}) 
-        GROUP BY product_name
-    """
-    cursor.execute(query, order_ids)
-    items = cursor.fetchall()
-    conn.close()
-    
-    # Excel fayl yaratish (openpyxl yordamida)
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Yig'ma Nakladnoy"
-    
-    # Sarlavha
-    ws.append(["Mahsulot nomi", "Umumiy miqdori"])
-    for row in items:
-        ws.append(list(row))
-        
-    file_stream = io.BytesIO()
-    wb.save(file_stream)
-    file_stream.seek(0)
-    
-    return send_file(
-        file_stream,
-        as_attachment=True,
-        download_name="yigma_nakladnoy.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
 
 @app.route('/add_order', methods=['POST'])
 def web_add_order():
@@ -2814,58 +2773,30 @@ def web_add_order():
       continue
     qty = float(qtys[i]) if i < len(qtys) else 1
 
-    prod = conn.execute(
-        'SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)
-    ).fetchone()
+    prod = conn.execute('SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
     if prod:
       price = prod['optom_price'] if prod['optom_price'] is not None else 0
       stock_p = prod['stock'] if prod['stock'] is not None else 0
       summa = price * qty
       total_sum += summa
       items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
-      conn.execute(
-          'UPDATE products SET stock = ? WHERE id = ?',
-          (stock_p - qty, prod['id']),
-      )
+      conn.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = total_sum - discount
 
-  # Do'konning qarzini yangi buyurtma summasiga oshiramiz
-  shop_res = conn.execute(
-      'SELECT debt FROM shops WHERE name = ?', (shop_name,)
-  ).fetchone()
-  current_debt = (
-      shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-  )
-  new_debt = current_debt + final_sum
-  conn.execute(
-      'UPDATE shops SET debt = ? WHERE name = ?', (new_debt, shop_name)
-  )
-
+  # MUHIM: Vebda ham buyurtma berilganda qarz darhol qo'shilmaydi, faqat 'Yetkazildi' bo'lganda qo'shiladi!
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
   cursor.execute(
-      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
-      " status, date, price_type, discount, comment) VALUES (?, ?, ?, ?, 'Yangi',"
-      ' ?, ?, ?, ?)',
-      (
-          shop_name,
-          agent_name,
-          final_sum,
-          items_text,
-          bugun,
-          'optom',
-          discount,
-          comment,
-      ),
+      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment) VALUES (?, ?, ?, ?, "Yangi", ?, ?, ?, ?)',
+      (shop_name, agent_name, final_sum, items_text, bugun, 'optom', discount, comment),
   )
   order_id = cursor.lastrowid
   conn.commit()
   conn.close()
 
-  # Sex guruhiga xabar yuborish
   try:
     group_text = (
         f'📝 <b>YANGI WEB BUYURTMA (#{order_id})</b>\n'
@@ -2887,30 +2818,33 @@ def update_status(order_id):
   new_status = request.form.get('status')
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
-  conn.execute(
-      'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
-  )
-  conn.execute(
-      'INSERT INTO order_status_history (order_id, status, changed_at) VALUES'
-      ' (?, ?, ?)',
-      (order_id, new_status, bugun),
-  )
+  
+  if new_status == 'Yetkazildi':
+      ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+      if ord_data and ord_data['status'] != 'Yetkazildi':
+          shop_name = ord_data['shop_name']
+          order_sum = ord_data['total_sum']
+          shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
+          curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
+          new_debt = curr_debt + order_sum
+          conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (new_debt, shop_name))
+
+  conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
+  conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (order_id, new_status, bugun))
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
-# 1. Login va Logout route'lari (Buni route'lar yozilgan joyga qo'shasiz)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        # O'zingiz xohlagan login va parolni shu yerga yozasiz:
         if username == 'admin' and password == 'admin2026':
             session['logged_in'] = True
-            return redirect(url_for('index')) # 'index' o'rniga asosiy sahifangiz funksiya nomini yozing
+            return redirect(url_for('index'))
         return "Login yoki parol xato! <a href='/login'>Qaytadan urinish</a>"
-    
     return '''
         <form method="post" style="margin: 100px auto; width: 300px; font-family: sans-serif;">
             <h2>Xoji-Aka Tizimi</h2>
@@ -2931,12 +2865,10 @@ def print_multiple_nakladnoy():
   conn = get_db_connection()
   output = io.BytesIO()
   wb = Workbook()
-  wb.remove(wb.active)  # Default sheetni o'chirish
+  wb.remove(wb.active)
 
   for order_id in ids:
-    order = conn.execute(
-        'SELECT * FROM orders WHERE id = ?', (order_id,)
-    ).fetchone()
+    order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
     if not order:
       continue
     ws = wb.create_sheet(title=f'Zakaz_{order_id}')
@@ -2956,7 +2888,6 @@ def print_multiple_nakladnoy():
       ws.cell(row=start_row, column=col_idx, value=h).font = Font(bold=True)
 
     row = start_row + 1
-    # Parsel items_text or simple table rendering
     for line in order['items_text'].split('\n'):
       if line.strip():
         ws.cell(row=row, column=1, value='-')
@@ -2964,9 +2895,7 @@ def print_multiple_nakladnoy():
         row += 1
 
     row += 1
-    ws.cell(row=row, column=1, value=f"JAMI: {order['total_sum']:,.0f} so'm").font = (
-        Font(bold=True)
-    )
+    ws.cell(row=row, column=1, value=f"JAMI: {order['total_sum']:,.0f} so'm").font = Font(bold=True)
 
   wb.save(output)
   output.seek(0)
@@ -2975,23 +2904,18 @@ def print_multiple_nakladnoy():
       output,
       as_attachment=True,
       download_name='Nakladnoylar.xlsx',
-      mimetype=(
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ),
+      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
 
 
 @app.route('/print_nakladnoy/<int:order_id>')
 def print_single_nakladnoy(order_id):
   conn = get_db_connection()
-  order = conn.execute(
-      'SELECT * FROM orders WHERE id = ?', (order_id,)
-  ).fetchone()
+  order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
   conn.close()
   if not order:
     return 'Topilmadi'
 
-  # Generate temporary excel and send
   cart_items = []
   for line in order['items_text'].split('\n'):
     if line.strip():
@@ -3021,14 +2945,12 @@ def add_stock():
     name = request.form.get('new_product_name')
     category = request.form.get('new_product_category', 'Boshqa')
     conn.execute(
-        'INSERT INTO products (name, category, stock, cost_price, optom_price,'
-        ' chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO products (name, category, stock, cost_price, optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
         (name, category, qty, cost_price, optom_price, optom_price),
     )
   else:
     conn.execute(
-        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ?'
-        ' WHERE name = ?',
+        'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ? WHERE name = ?',
         (qty, cost_price, optom_price, product_select),
     )
   conn.commit()
@@ -3043,15 +2965,10 @@ def pay_debt():
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   conn = get_db_connection()
-  shop = conn.execute(
-      'SELECT name, debt FROM shops WHERE id = ?', (shop_id,)
-  ).fetchone()
+  shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
   if shop:
     curr_debt = shop['debt'] if shop['debt'] is not None else 0
-    conn.execute(
-        'UPDATE shops SET debt = ? WHERE id = ?',
-        (curr_debt - amount, shop['name']),
-    )
+    conn.execute('UPDATE shops SET debt = ? WHERE name = ?', (curr_debt - amount, shop['name']))
     conn.execute(
         'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
         (f"Qarz to'lovi ({shop['name']})", amount, today),
@@ -3066,10 +2983,7 @@ def add_income():
   source, amount = request.form['source'], float(request.form['amount'])
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
-  conn.execute(
-      'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-      (source, amount, today),
-  )
+  conn.execute('INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)', (source, amount, today))
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
@@ -3080,10 +2994,7 @@ def add_expense():
   reason, amount = request.form['reason'], float(request.form['amount'])
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
-  conn.execute(
-      'INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)',
-      (reason, amount, today),
-  )
+  conn.execute('INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)', (reason, amount, today))
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
@@ -3091,7 +3002,8 @@ def add_expense():
 
 @app.route('/logout')
 def logout():
-  return redirect(url_for('operator_dashboard'))
+  session.pop('logged_in', None)
+  return redirect(url_for('login'))
 
 
 @app.route('/export_excel')
@@ -3113,9 +3025,7 @@ def export_excel():
       output,
       as_attachment=True,
       download_name='Xoji_Aka_Hisobot.xlsx',
-      mimetype=(
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ),
+      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
 
 
