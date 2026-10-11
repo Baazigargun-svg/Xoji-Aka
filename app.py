@@ -20,7 +20,7 @@ import telebot
 from telebot import types
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = ""
+BOT_TOKEN = "8573337094:AAFe-tPA-zv9an70Isdq64IgDgkv7AZ0e7I"
 ADMIN_ID = 6851851908
 SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
@@ -121,6 +121,7 @@ def init_web_db():
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
+      (66833564447, "Bobur", "+998972668242", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
