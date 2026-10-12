@@ -20,7 +20,7 @@ import telebot
 from telebot import types
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "8573337094:AAFdtqltZzk6XMZEDN-tfATi59FPJf6qqd4"
+BOT_TOKEN = "8573337094:AAFqjPtwP5oCkgKMhLH1ansVjNdnp7nfuXY"
 ADMIN_ID = 6851851908
 SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
@@ -236,7 +236,7 @@ def init_web_db():
       ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0),
       ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0),
       ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
-      ('Snikers/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
+      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
       ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
       ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0),
       ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0),
