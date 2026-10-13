@@ -20,7 +20,7 @@ import telebot
 from telebot import types
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "8573337094:AAFqjPtwP5oCkgKMhLH1ansVjNdnp7nfuXY"
+BOT_TOKEN = "8573337094:AAHscn84FtzQOrq-QvXs_MDwZo5or8Sob6I"
 ADMIN_ID = 6851851908
 SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
 
