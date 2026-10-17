@@ -505,7 +505,6 @@ def ekspeditor_process_payment_request(message):
         reply_markup=get_main_menu('ekspeditor'),
     )
 
-    # Adminga tugmali xabar yuborish
     admin_markup = types.InlineKeyboardMarkup()
     admin_markup.row(
         types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"approve_pay_{req_id}"),
@@ -526,7 +525,6 @@ def ekspeditor_process_payment_request(message):
     bot.send_message(message.chat.id, "❌ Xatolik! Faqat raqam kiriting.", reply_markup=get_main_menu('ekspeditor'))
 
 
-# ADMIN TO'LOVNI TASDIQLASH YOKI BEKOR QILISH CALLBACKLARI
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('approve_pay_', 'reject_pay_')))
 def admin_handle_payment_request(call):
     action, _, req_id_str = call.data.split('_', 2)
@@ -550,7 +548,6 @@ def admin_handle_payment_request(call):
     today = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     if action == 'approve':
-        # Qarzdan ayirish va kassaga kirim qilish
         s_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
         curr_debt = s_res['debt'] if s_res and s_res['debt'] is not None else 0
 
@@ -608,7 +605,6 @@ def switch_role_menu(message):
     bot.send_message(message.chat.id, '🚚 Ekspeditor rejimiga oʻtdingiz.', reply_markup=get_main_menu('ekspeditor'))
 
 
-# --- ZAVSKLAD VA EKSPEDITOR BOT QISMI ---
 @bot.message_handler(func=lambda message: message.text == '📦 Yig‘ilgan Yaxlit Buyurtmalar')
 def zavsklad_view_orders(message):
     conn = get_db_connection()
@@ -1584,7 +1580,7 @@ def update_agent(tg_id):
 
 
 # --- BUYURTMA BERISH ---
-@app.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
+@bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order_choice(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
@@ -1592,7 +1588,7 @@ def start_order_choice(message):
     bot.send_message(message.chat.id, "Buyurtma berish turini tanlang:", reply_markup=markup)
 
 
-@app.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
+@bot.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
 def start_order(message):
   tg_id = message.from_user.id
   order_type = message.text
