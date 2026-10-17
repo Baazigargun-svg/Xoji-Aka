@@ -170,7 +170,7 @@ def init_web_db():
       ('Pul hokim', '', 'Adliya yoʻli'),
       ('Hoji ona market', '', 'Med yoni'),
       ('Chinor market', '', 'Med yoni'),
-      ('16 market', '', '', 'Termiz Shahar', 'Begoyim roʻparasi'),
+      ('16 market', '', '', 'Termiz shahar', 'Begoyim roʻparasi'),
       ('Lada yoni', '', 'Lada yoni'),
       ('Alibek aka', '', 'Sohil pastlik'),
       ('4 aka-uka', '', 'sohil'),
@@ -208,10 +208,10 @@ def init_web_db():
       ('Abrayev Oral Market', '', '5-daha doktar A'),
       ('Abidov Jamshid', '', 'Yashil dunyo Tisu yoni'),
   ]
-  for s_name, s_phone, s_region in initial_shops:
+  for s_name, s_phone, s_region, s_landmark, s_territory in initial_shops:
     cursor.execute(
-        '''INSERT OR IGNORE INTO shops (name, phone, debt, region) VALUES (?, ?, 0, ?)''',
-        (s_name, s_phone, s_region),
+        '''INSERT OR IGNORE INTO shops (name, phone, debt, region, landmark, territory) VALUES (?, ?, 0, ?, ?, ?)''',
+        (s_name, s_phone, s_region, s_landmark, s_territory),
     )
 
   initial_products = [
