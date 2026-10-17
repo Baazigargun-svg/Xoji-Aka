@@ -170,7 +170,7 @@ def init_web_db():
       ('Pul hokim', '', 'Adliya yoʻli'),
       ('Hoji ona market', '', 'Med yoni'),
       ('Chinor market', '', 'Med yoni'),
-      ('16 market', '', 'Begoyim roʻparasi'),
+      ('16 market', 'Termiz shahar', 'Begoyim roʻparasi'),
       ('Lada yoni', '', 'Lada yoni'),
       ('Alibek aka', '', 'Sohil pastlik'),
       ('4 aka-uka', '', 'sohil'),
