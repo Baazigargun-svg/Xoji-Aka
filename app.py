@@ -268,7 +268,6 @@ def init_web_db():
   conn.commit()
   conn.close()
 
-
 def create_excel_invoice(
     order_id, shop_name, agent_name, date_str, price_type, cart_items, comment=''
 ):
