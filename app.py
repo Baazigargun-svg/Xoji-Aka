@@ -208,6 +208,7 @@ def init_web_db():
       ('Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
       ('Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
       ('878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
+      (' Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
   ]
   for s_name, s_phone, s_region, s_territory in initial_shops:
     cursor.execute(
