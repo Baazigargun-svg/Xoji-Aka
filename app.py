@@ -170,7 +170,7 @@ def init_web_db():
       ('Pul hokim', '', 'Adliya yoʻli'),
       ('Hoji ona market', '', 'Med yoni'),
       ('Chinor market', '', 'Med yoni'),
-      ('16 market', 'Termiz shahar', 'Begoyim roʻparasi'),
+      ('16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
       ('Lada yoni', '', 'Lada yoni'),
       ('Alibek aka', '', 'Sohil pastlik'),
       ('4 aka-uka', '', 'sohil'),
@@ -2479,7 +2479,6 @@ HTML_TEMPLATE = """
                                                     {% else %}<span class="badge bg-dark">{{ a['role'] }}</span>{% endif %}
                                                 </td>
                                                 <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
                                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
                                                     {% if a['role'] == 'pending' %}
                                                     <form action="/approve_agent/{{ a['tg_id'] }}" method="POST" class="d-inline">
