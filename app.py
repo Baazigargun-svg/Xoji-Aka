@@ -77,6 +77,10 @@ def init_web_db():
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, status TEXT, changed_at TEXT)'''
   )
   cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS payment_requests 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT DEFAULT 'pending', date TEXT)'''
+  )
+  cursor.execute(
       '''CREATE TABLE IF NOT EXISTS products 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, category TEXT DEFAULT 'Boshqa', stock REAL DEFAULT 0, cost_price REAL DEFAULT 0, optom_price REAL DEFAULT 0, chakana_price REAL DEFAULT 0, agent_percent REAL DEFAULT 5)'''
   )
@@ -125,145 +129,6 @@ def init_web_db():
       " 'Admin', '', 'admin')",
       (ADMIN_ID,),
   )
-
-  initial_agents = [
-      (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
-      (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
-      (6431126337, "Asror", "+998912360777", "agent"),
-      (66833564447, "Bobur", "+998972668242", "agent"),
-      (6851851908, "SRJ", "+998975155540", "agent,admin"),
-  ]
-  for ag_id, ag_name, ag_phone, ag_role in initial_agents:
-    cursor.execute(
-        "INSERT OR IGNORE INTO users (tg_id, name, phone, role) VALUES (?, ?,"
-        " ?, ?)",
-        (ag_id, ag_name, ag_phone, ag_role),
-    )
-
-  initial_shops = [
-      ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
-      ('', 'Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
-      ('', 'Qayumov Kamol', '', 'Termiz shahar', 'Murch boboga yetmasdan'),
-      ('', 'Akbar aka', '', 'Termiz shahar', 'Bekat murch bobo'),
-      ('', 'Pub house', '', 'Termiz shahar', 'Pub house'),
-      ('', 'Chapayev roparasi', '', 'Termiz shahar', 'Chapayev roparasi'),
-      ('', 'Toshpoʻlat aka', '', 'Termiz shahar', 'Uchrashuv yoni'),
-      ('', 'Abdulfayz bekat', '', 'Termiz shahar', ''),
-      ('', 'Dilorom', '', 'Termiz shahar', 'Tutzor'),
-      ('', 'Joʻrabek aka', '', 'Termiz shahar', 'Anorcha tagi'),
-      ('', 'Vohas', '', 'Termiz shahar', 'Vohas'),
-      ('', 'Oʻzbegim market', '', 'Termiz shahar', 'Davr bank yoni'),
-      ('', 'Pokiza market', '', 'Termiz shahar', 'Muz saroy yoni'),
-      ('', 'Soxibkor doʻstlik', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Feruza non sex', '', 'Termiz shahar', 'Nigoh non sexi yoni'),
-      ('', 'South brothers', '', 'Termiz shahar', 'Doktor A qatori'),
-      ('', 'Gulmira opa', '', 'Termiz shahar', 'Cola orqasi'),
-      ('', 'Taniqulov Oʻktam', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Abdulloh market', '', 'Termiz shahar', 'Feredun café'),
-      ('', '23-market', '', 'Termiz shahar', '23-sartarosh yoni'),
-      ('', 'Oral Cola market', '', 'Termiz shahar', 'South brothersga yetmay'),
-      ('', 'Muxlis Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Anjir Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Sevimli Market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Abbos market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Dilya opa', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Sanjar aka', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Nur market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', '547 market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Shox market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Makro market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Xusan bobo market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Fresh market umid aka', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli'),
-      ('', 'Hoji ona market', '', 'Termiz shahar', 'Med yoni'),
-      ('', 'Chinor market', '', 'Termiz shahar', 'Med yoni'),
-      ('', '16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
-      ('', 'Lada yoni', '', 'Termiz shahar', 'Lada yoni'),
-      ('', 'Alibek aka', '', 'Termiz shahar', 'Sohil pastlik'),
-      ('', '4 aka-uka', '', 'Termiz shahar', 'sohil'),
-      ('', 'Rayxon opa sohil', '', 'Termiz shahar', 'Guliston ma-si'),
-      ('', 'Muhabbat opa', '', 'Termiz shahar', 'Boyqishloq'),
-      ('', 'Moyka yoni', '', 'Termiz shahar', 'Moyka yoni'),
-      ('', 'Malika yoni optom', '', 'Termiz shahar', 'Malika yoni optom'),
-      ('', 'AR market', '', 'Termiz shahar', 'Abdurashid market'),
-      ('', 'Kam-kam Market', '', 'Termiz shahar', '23-dom yoni'),
-      ('', 'Osiyo tagi', '', 'Termiz shahar', ''),
-      ('', '24/7 Market', '', 'Termiz shahar', ''),
-      ('', 'Nigora opa', '', 'Termiz shahar', 'Eski pioner oldi'),
-      ('', 'Sherbek aka/fresh M', '', 'Termiz shahar', 'Best roʻparasi'),
-      ('', 'Otabek aka', '', 'Termiz shahar', 'antena tagi'),
-      ('', 'Universal Market', '', 'Termiz shahar', 'Lola kafe yoni'),
-      ('', 'Aka-Uka Market', '', 'Termiz shahar', 'Masjid yoni'),
-      ('', 'Oila Market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Boxo market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Otabek zapchast M', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Maya market', '', 'Termiz shahar', 'Gostsatndart yoni'),
-      ('', 'Umida opa', '', 'Termiz shahar', 'Mashhura yoʻli'),
-      ('', 'Darband city', '', 'Termiz shahar', 'Vokzal yoni'),
-      ('', 'Otajon market', '', 'Termiz shahar', 'Tisudan keyin'),
-      ('', 'Barakali market', '', 'Termiz shahar', 'Tisu yoni'),
-      ('', 'Asilabonu', '', 'Termiz shahar', 'Boysun bekati yoni'),
-      ('', 'Norqulova Nargiza', '', 'Termiz shahar', 'Hayit ala uyi taraf'),
-      ('', 'Sherzod aka', '', 'Termiz shahar', 'Harbiy doʻkon'),
-      ('', 'Bahor Market', '', 'Termiz tuman', ''),
-      ('', 'Baraka Market', '', 'Termiz tuman', ''),
-      ('', 'Farxod Market', '', 'Senter Kamaz', ''),
-      ('', 'Ariqcha Market', '', 'Senter Kamaz', ''),
-      ('', 'Xolida Market', '', 'Limon', ''),
-      ('', '7Я Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Jahon Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
-      ('', 'Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
-      ('', '878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
-      ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
-  ]
-  for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
-    cursor.execute(
-        """INSERT OR IGNORE INTO shops (firm, name, phone, debt, region, landmark, territory) 
-             VALUES (?, ?, ?, 0, ?, ?, '')""",
-        (s_firm, s_name, s_phone, s_region, s_landmark),
-    )
-
-  initial_products = [
-      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0, 5),
-      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0, 5),
-      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0, 5),
-      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0, 5),
-      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0, 5),
-      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0, 5),
-      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0, 5),
-      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0, 5),
-      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0, 5),
-      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0, 5),
-      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0, 5),
-      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0, 5),
-      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0, 5),
-      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0, 3),
-      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0, 3),
-      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0, 3),
-      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0, 3),
-      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
-  ]
-  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
-    cursor.execute(
-        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price, agent_percent) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
-    )
 
   conn.commit()
   conn.close()
@@ -461,11 +326,10 @@ def get_main_menu(role):
         types.KeyboardButton("🏪 Do'kon qo'shish (AKB)"),
     )
     markup.row(
-        types.KeyboardButton("💰 Qarz/To'lov yozish"),
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
+        types.KeyboardButton("📊 Do'konlar qarzi"),
     )
     markup.row(
-        types.KeyboardButton("📊 Do'konlar qarzi"),
         types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
@@ -487,7 +351,10 @@ def get_main_menu(role):
         types.KeyboardButton('📜 Yetkazilgan Buyurtmalar Tarixi'),
     )
     markup.row(
+        types.KeyboardButton("💰 Qarz/To'lov yozish (Ekspeditor)"),
         types.KeyboardButton("📊 Do'konlar qarzi"),
+    )
+    markup.row(
         types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
@@ -548,7 +415,7 @@ def start_command(message):
     )
 
 
-# 1-TUGMA: FAQAT QARZI BOR DO'KONLAR RO'YXATI
+# --- DO'KONLAR QARZI VA STATUS ---
 @bot.message_handler(func=lambda message: message.text == "📊 Do'konlar qarzi")
 def view_shops_debt_only(message):
     conn = get_db_connection()
@@ -565,7 +432,6 @@ def view_shops_debt_only(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
-# 2-TUGMA: FAQAT YETKAZILMAGAN BUYURTMALAR RO'YXATI
 @bot.message_handler(func=lambda message: message.text == "📋 Status (Yetkazilmaganlar)")
 def view_undelivered_orders_only(message):
     conn = get_db_connection()
@@ -580,6 +446,128 @@ def view_undelivered_orders_only(message):
     for o in orders:
         text += f"🆔 **#{o['id']}** | 🏪 {o['shop_name']}\nStatus: **{o['status']}** | Summa: {o['total_sum']:,.0f} so'm\nSana: {o['date']}\n-------------------\n"
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+
+# --- EKSPEDITOR TO'LOV YOZISH (ADMIN TASDIG'I BILAN) ---
+@bot.message_handler(func=lambda message: message.text == "💰 Qarz/To'lov yozish (Ekspeditor)")
+def ekspeditor_pay_debt_start(message):
+  conn = get_db_connection()
+  shops = conn.execute('SELECT name FROM shops').fetchall()
+  conn.close()
+  if not shops:
+    bot.send_message(message.chat.id, "❌ Do'konlar yo'q.")
+    return
+  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+  for s in shops:
+    markup.add(types.KeyboardButton(s['name']))
+  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+  msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
+  bot.register_next_step_handler(msg, ekspeditor_ask_payment_amount)
+
+
+def ekspeditor_ask_payment_amount(message):
+  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
+    switch_role_menu(message)
+    return
+  shop_name = message.text
+  user_steps[message.from_user.id] = {'pay_shop': shop_name}
+  msg = bot.send_message(
+      message.chat.id,
+      f"'{shop_name}' uchun qancha to'lov kirdi (summa):",
+      reply_markup=types.ReplyKeyboardRemove(),
+  )
+  bot.register_next_step_handler(msg, ekspeditor_process_payment_request)
+
+
+def ekspeditor_process_payment_request(message):
+  uid = message.from_user.id
+  try:
+    amount = float(message.text)
+    shop_name = user_steps.get(uid, {}).get('pay_shop', 'Nomalum')
+    
+    conn = get_db_connection()
+    user_res = conn.execute('SELECT name FROM users WHERE tg_id = ?', (uid,)).fetchone()
+    ekspeditor_name = user_res['name'] if user_res else 'Ekspeditor'
+    bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO payment_requests (shop_name, ekspeditor_name, amount, status, date) VALUES (?, ?, ?, 'pending', ?)",
+        (shop_name, ekspeditor_name, amount, bugun)
+    )
+    req_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    bot.send_message(
+        message.chat.id,
+        f"✅ To'lov so'rovi (#{req_id}) adminga yuborildi. Admin tasdiqlagach do'kon qarzidan ayriladi.",
+        reply_markup=get_main_menu('ekspeditor'),
+    )
+
+    # Adminga tugmali xabar yuborish
+    admin_markup = types.InlineKeyboardMarkup()
+    admin_markup.row(
+        types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"approve_pay_{req_id}"),
+        types.InlineKeyboardButton("❌ Bekor qilish", callback_data=f"reject_pay_{req_id}")
+    )
+    bot.send_message(
+        ADMIN_ID,
+        f"💰 **YANGI TO'LOV SO'ROVI (#{req_id})**\n\n"
+        f"🏪 Do'kon: {shop_name}\n"
+        f"👤 Ekspeditor: {ekspeditor_name}\n"
+        f"💵 Summa: **{amount:,.0f} so'm**\n"
+        f"📅 Sana: {bugun}",
+        parse_mode="Markdown",
+        reply_markup=admin_markup
+    )
+  except Exception as e:
+    print("To'lov yozish xatosi:", e)
+    bot.send_message(message.chat.id, "❌ Xatolik! Faqat raqam kiriting.", reply_markup=get_main_menu('ekspeditor'))
+
+
+# ADMIN TO'LOVNI TASDIQLASH YOKI BEKOR QILISH CALLBACKLARI
+@bot.callback_query_handler(func=lambda call: call.data.startswith(('approve_pay_', 'reject_pay_')))
+def admin_handle_payment_request(call):
+    action, _, req_id_str = call.data.split('_', 2)
+    req_id = int(req_id_str)
+
+    conn = get_db_connection()
+    req = conn.execute("SELECT * FROM payment_requests WHERE id = ?", (req_id,)).fetchone()
+    
+    if not req:
+        bot.answer_callback_query(call.id, "So'rov topilmadi yoki allaqachon ko'rib chiqilgan!")
+        conn.close()
+        return
+
+    if req['status'] != 'pending':
+        bot.answer_callback_query(call.id, "Bu so'rov allaqachon bajarilgan!")
+        conn.close()
+        return
+
+    shop_name = req['shop_name']
+    amount = req['amount']
+    today = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    if action == 'approve':
+        # Qarzdan ayirish va kassaga kirim qilish
+        s_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
+        curr_debt = s_res['debt'] if s_res and s_res['debt'] is not None else 0
+
+        conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (curr_debt - amount, shop_name))
+        conn.execute("INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)", (f"Qarz to'lovi ({shop_name})", amount, today))
+        conn.execute("UPDATE payment_requests SET status = 'approved' WHERE id = ?", (req_id,))
+        conn.commit()
+        
+        bot.answer_callback_query(call.id, "To'lov tasdiqlandi, qarz chegirildi va kassaga yozildi!")
+        bot.edit_message_text(f"✅ **Tasdiqlandi va bajarildi!** (#{req_id})\n🏪 Do'kon: {shop_name}\n💵 Summa: {amount:,.0f} so'm", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    else:
+        conn.execute("UPDATE payment_requests SET status = 'rejected' WHERE id = ?", (req_id,))
+        conn.commit()
+        bot.answer_callback_query(call.id, "To'lov so'rovi rad etildi!")
+        bot.edit_message_text(f"❌ **Rad etildi!** (#{req_id})\n🏪 Do'kon: {shop_name}\n💵 Summa: {amount:,.0f} so'm", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
+    conn.close()
 
 
 @bot.message_handler(
@@ -1595,8 +1583,8 @@ def update_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# 4-TALAB: POSESHENIYA VA OBSHIY ZAKAZ URISH
-@bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
+# --- BUYURTMA BERISH ---
+@app.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order_choice(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
@@ -1604,7 +1592,7 @@ def start_order_choice(message):
     bot.send_message(message.chat.id, "Buyurtma berish turini tanlang:", reply_markup=markup)
 
 
-@bot.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
+@app.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
 def start_order(message):
   tg_id = message.from_user.id
   order_type = message.text
@@ -2003,68 +1991,6 @@ def my_orders(message):
     t_sum = o['total_sum'] if o['total_sum'] is not None else 0
     text += f"🏪 {o['shop_name']} | {t_sum:,.0f} so'm | {o['status']} | {o['date']}\n\n"
   bot.send_message(message.chat.id, text, parse_mode='HTML')
-
-
-@bot.message_handler(func=lambda message: message.text == "💰 Qarz/To'lov yozish")
-def pay_debt_start(message):
-  conn = get_db_connection()
-  shops = conn.execute('SELECT name FROM shops').fetchall()
-  conn.close()
-  if not shops:
-    bot.send_message(message.chat.id, "❌ Do'konlar yo'q.")
-    return
-  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-  for s in shops:
-    markup.add(types.KeyboardButton(s['name']))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
-  msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
-  bot.register_next_step_handler(msg, ask_payment_amount)
-
-
-def ask_payment_amount(message):
-  if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
-    switch_role_menu(message)
-    return
-  shop_name = message.text
-  msg = bot.send_message(
-      message.chat.id,
-      f"'{shop_name}' qancha to'lov kirdi (summa):",
-      reply_markup=types.ReplyKeyboardRemove(),
-  )
-  bot.register_next_step_handler(msg, process_payment, shop_name)
-
-
-def process_payment(message, shop_name):
-  try:
-    amount = float(message.text)
-    today = datetime.now().strftime('%Y-%m-%d %H:%M')
-    conn = get_db_connection()
-    s_res = conn.execute(
-        'SELECT debt FROM shops WHERE name = ?', (shop_name,)
-    ).fetchone()
-    curr_debt = s_res['debt'] if s_res and s_res['debt'] is not None else 0
-
-    conn.execute(
-        'UPDATE shops SET debt = ? WHERE name = ?',
-        (curr_debt - amount, shop_name),
-    )
-    conn.execute(
-        'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({shop_name})", amount, today),
-    )
-    conn.commit()
-    conn.close()
-    bot.send_message(
-        message.chat.id,
-        f'✅ To\'lov yozildi: {amount:,.0f} so\'m chegirildi.',
-        reply_markup=get_main_menu('agent'),
-    )
-  except:
-    bot.send_message(
-        message.chat.id,
-        '❌ Faqat raqam kiriting.',
-        reply_markup=get_main_menu('agent'),
-    )
 
 
 # --- FLASK HTML SHABLONLARI ---
@@ -2579,7 +2505,6 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                     </div>
-                    <!-- 6-TALAB: KASSADAGI KIRIM, CHIQIM VA AVANSLAR TARIXI -->
                     <div class="card-glass p-4">
                         <h5 class="fw-bold mb-3"><i class="bi bi-clock-history me-2 text-primary"></i>Kassa Tarixi (Kirim / Chiqim / Avanslar)</h5>
                         <div class="row">
