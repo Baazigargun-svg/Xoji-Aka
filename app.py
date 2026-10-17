@@ -170,7 +170,7 @@ def init_web_db():
       ('Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli'),
       ('Hoji ona market', '', 'Termiz shahar', 'Med yoni'),
       ('Chinor market', '', 'Termiz shahar', 'Med yoni'),
-      ('16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
+      ('16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),  # <-- TO'G'RILANDI (4 ta element bo'ldi)
       ('Lada yoni', '', 'Termiz shahar', 'Lada yoni'),
       ('Alibek aka', '', 'Termiz shahar', 'Sohil pastlik'),
       ('4 aka-uka', '', 'Termiz shahar', 'sohil'),
@@ -197,7 +197,7 @@ def init_web_db():
       ('Barakali market', '', 'Termiz shahar', 'Tisu yoni'),
       ('Asilabonu', '', 'Termiz shahar', 'Boysun bekati yoni'),
       ('Norqulova Nargiza', '', 'Termiz shahar', 'Hayit ala uyi taraf'),
-      ('Sherzod aka', '', 'Harbiy doʻkon'),
+      ('Sherzod aka', '', 'Termiz shahar', 'Harbiy doʻkon'),
       ('Bahor Market', '', 'Termiz tuman', ''),
       ('Baraka Market', '', 'Termiz tuman', ''),
       ('Farxod Market', '', 'Senter Kamaz', ''),
