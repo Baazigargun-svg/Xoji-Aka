@@ -2762,16 +2762,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 </div>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
-    window.addEventListener('DOMContentLoaded', (event) => {
-        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
-            let tgId = window.Telegram.WebApp.initDataUnsafe.user.id;
-            // Agar sahifada tg_id bo'lmasa, uni avtomatik URL ga qo'shib yangilaymiz
-            if (!window.location.search.includes('tg_id=')) {
-                let separator = window.location.search ? '&' : '?';
-                window.location.href = window.location.href + separator + 'tg_id=' + tgId;
-            }
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function toggleNewProd() {
@@ -2879,29 +2870,10 @@ def restrict_access():
 
 @app.route('/', methods=['GET'], endpoint='index')
 def operator_dashboard():
-  # Telegram Mini App'dan kelgan user_id ni tekshiramiz (agar Telegram orqali ochilgan bo'lsa)
-  tg_id_param = request.args.get('tg_id')
-  
-  # Agar web brauzerdan admin paroli bilan kirgan bo'lsa (eski admin panel)
-  if session.get('logged_in'):
-      # Admin uchun to'liq panel logikasi ishlaydi (pastdagi mavjud kodlar)
-      pass
   start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-%d'))
   end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
 
   conn = get_db_connection()
-  
-  # Agar tg_id kelgan bo'lsa, xodimning rolini aniqlaymiz
-  user_role = 'admin' # Standart holat
-  if tg_id_param:
-      try:
-          user_tg = int(tg_id_param)
-          if user_tg != ADMIN_ID:
-              u_res = conn.execute('SELECT role FROM users WHERE tg_id = ?', (user_tg,)).fetchone()
-              if u_res:
-                  user_role = u_res['role']
-      except:
-          pass
   shops = conn.execute('SELECT * FROM shops ORDER BY name').fetchall()
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
