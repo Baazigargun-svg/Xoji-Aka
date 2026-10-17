@@ -133,13 +133,18 @@ def init_web_db():
         (ag_id, ag_name, ag_phone, ag_role),
     )
 def init_web_db():
-  # 1. Bazada firm ustuni bo'lmasa, qo'shib olamiz
+  # 1. Bazaga ulanish va kursor ochish (Mana shu yetishmayotgandi!)
+  conn = sqlite3.connect('database.db')  # Bazangizning nomi qanday bo'lsa o'sha yoziladi (masalan: db.sqlite3 yoki database.db)
+  cursor = conn.cursor()
+
+  # 2. 'firm' ustuni yo'q bo'lsa qo'shish
   try:
     cursor.execute('ALTER TABLE shops ADD COLUMN firm TEXT')
     conn.commit()
   except:
     pass
-      
+
+  # 3. Do'konlar ro'yxati
   initial_shops = [
       ('Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
       ('Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
@@ -218,7 +223,7 @@ def init_web_db():
       ('Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
   ]
 
-  # Bazaga yozish qismi:
+  # 4. Bazaga yozish qismi
   for shop in initial_shops:
     if len(shop) == 3:
       s_name, s_phone, s_region = shop
@@ -232,6 +237,7 @@ def init_web_db():
         (s_name, s_phone, s_region, s_landmark),
     )
   conn.commit()
+  conn.close()  # Ulanishni yopib qo'yamiz
 
   initial_products = [
       ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0),
