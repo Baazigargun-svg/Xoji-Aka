@@ -132,7 +132,14 @@ def init_web_db():
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
     )
-
+def init_web_db():
+  # 1. Bazada firm ustuni bo'lmasa, qo'shib olamiz
+  try:
+    cursor.execute('ALTER TABLE shops ADD COLUMN firm TEXT')
+    conn.commit()
+  except:
+    pass
+      
   initial_shops = [
       ('Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
       ('Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
