@@ -50,7 +50,7 @@ def init_web_db():
   cursor = conn.cursor()
 
   cursor.execute(
-      '''CREATE TABLE IF NOT EXISTS users (tg_id INTEGER PRIMARY KEY, name TEXT, phone TEXT, role TEXT DEFAULT 'pending')'''
+      '''CREATE TABLE IF NOT EXISTS users (tg_id INTEGER PRIMARY KEY, name TEXT, phone TEXT, role TEXT DEFAULT 'pending', territory TEXT DEFAULT '', salary_percent REAL DEFAULT 5)'''
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS expenses 
@@ -59,6 +59,10 @@ def init_web_db():
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS incomes 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, amount REAL, date TEXT)'''
+  )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS advances 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, worker_name TEXT, amount REAL, date TEXT)'''
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS product_incomes 
@@ -74,11 +78,11 @@ def init_web_db():
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS products 
-                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, category TEXT DEFAULT 'Boshqa', stock REAL DEFAULT 0, cost_price REAL DEFAULT 0, optom_price REAL DEFAULT 0, chakana_price REAL DEFAULT 0)'''
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, category TEXT DEFAULT 'Boshqa', stock REAL DEFAULT 0, cost_price REAL DEFAULT 0, optom_price REAL DEFAULT 0, chakana_price REAL DEFAULT 0, agent_percent REAL DEFAULT 5)'''
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS shops 
-                      (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '')'''
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, firm TEXT DEFAULT '', name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '', territory TEXT DEFAULT '')'''
   )
 
   migrations = [
@@ -96,12 +100,15 @@ def init_web_db():
           "chakana_price",
       ),
       ("ALTER TABLE products ADD COLUMN stock REAL DEFAULT 0", "stock"),
+      ("ALTER TABLE products ADD COLUMN agent_percent REAL DEFAULT 5", "agent_percent"),
       ("ALTER TABLE shops ADD COLUMN visit_days TEXT DEFAULT ''", "visit_days"),
       ("ALTER TABLE shops ADD COLUMN region TEXT DEFAULT ''", "region"),
       ("ALTER TABLE shops ADD COLUMN landmark TEXT DEFAULT ''", "landmark"),
       ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
-      ("ALTER TABLE shops ADD COLUMN territory TEXT DEFAULT ''", "territory"),       # <-- 1-QO'SHILGAN QATOR
-      ("ALTER TABLE users ADD COLUMN territory TEXT DEFAULT ''", "territory"),       # <-- 2-QO'SHILGAN QATOR
+      ("ALTER TABLE shops ADD COLUMN territory TEXT DEFAULT ''", "territory"),
+      ("ALTER TABLE shops ADD COLUMN firm TEXT DEFAULT ''", "firm"),
+      ("ALTER TABLE users ADD COLUMN territory TEXT DEFAULT ''", "territory"),
+      ("ALTER TABLE users ADD COLUMN salary_percent REAL DEFAULT 5", "salary_percent"),
       ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
       ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
       ("ALTER TABLE orders ADD COLUMN comment TEXT DEFAULT ''", "comment"),
@@ -132,25 +139,7 @@ def init_web_db():
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
     )
-def init_web_db():
-  conn = sqlite3.connect('database.db')
-  cursor = conn.cursor()
 
-  # 1. Shops jadvalini yaratish
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS shops (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            firm TEXT DEFAULT '',
-            name TEXT NOT NULL,
-            phone TEXT DEFAULT '',
-            debt REAL DEFAULT 0,
-            region TEXT DEFAULT '',
-            landmark TEXT DEFAULT '',
-            territory TEXT DEFAULT ''
-        )
-    """)
-
-  # 2. Do'konlar ro'yxati (Boshida firmasi bo'sh ko'rsatilgan holda)
   initial_shops = [
       ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
       ('', 'Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
@@ -228,8 +217,6 @@ def init_web_db():
       ('', '878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
       ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
   ]
-
-  # 3. Bazaga qo'shish (juda sodda sikl)
   for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
     cursor.execute(
         """INSERT OR IGNORE INTO shops (firm, name, phone, debt, region, landmark, territory) 
@@ -237,49 +224,45 @@ def init_web_db():
         (s_firm, s_name, s_phone, s_region, s_landmark),
     )
 
-  conn.commit()
-  conn.close()
-
   initial_products = [
-      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0),
-      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0),
-      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0),
-      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0),
-      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0),
-      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0),
-      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0),
-      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
-      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
-      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0),
-      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0),
-      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0),
-      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0),
-      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
-      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0),
-      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0),
-      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0),
-      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0),
-      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0),
-      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0),
-      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0),
-      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0),
-      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
-      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
-      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0),
-      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0),
-      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0),
-      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
-      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0),
-      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
-      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0),
-      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0),
-      
+      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0, 5),
+      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0, 5),
+      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0, 5),
+      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0, 5),
+      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0, 5),
+      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0, 5),
+      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0, 5),
+      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
+      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
+      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
+      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
+      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0, 5),
+      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0, 5),
+      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
+      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0, 5),
+      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0, 5),
+      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
+      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0, 5),
+      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
+      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0, 5),
+      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0, 3),
+      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0, 3),
+      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
+      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
+      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
+      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0, 3),
+      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0, 3),
+      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
+      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
+      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
+      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
+      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
   ]
-  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana in initial_products:
+  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
     cursor.execute(
-        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price) 
-           VALUES (?, ?, ?, ?, ?, ?)''',
-        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana),
+        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price, agent_percent) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
     )
 
   conn.commit()
@@ -481,6 +464,9 @@ def get_main_menu(role):
         types.KeyboardButton("💰 Qarz/To'lov yozish"),
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
     )
+    markup.row(
+        types.KeyboardButton("📊 Do'konlar qarzi va Statuslar"),
+    )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'sex':
     markup.row(
@@ -498,6 +484,9 @@ def get_main_menu(role):
     markup.row(
         types.KeyboardButton('🚚 Yetkazilishi Kerak Buyurtmalar'),
         types.KeyboardButton('📜 Yetkazilgan Buyurtmalar Tarixi'),
+    )
+    markup.row(
+        types.KeyboardButton("📊 Do'konlar qarzi va Statuslar"),
     )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   else:
@@ -557,30 +546,24 @@ def start_command(message):
     )
 
 
-@bot.message_handler(func=lambda message: message.text == '💰 Kassaga Kirim Qilish')
-def ask_income_amount(message):
-    msg = bot.send_message(message.chat.id, "Kirim qilinadigan summa va izohni kiriting:\n*(Masalan: 150000 Naqd)*", parse_mode="Markdown")
-    bot.register_next_step_handler(msg, process_income_amount)
+# 1, 2-TALAB: AGENT VA EKSPEDITOR UCHUN QARZ VA STATUSLARNI KO'RISH
+@bot.message_handler(func=lambda message: message.text == "📊 Do'konlar qarzi va Statuslar")
+def view_shops_debt_and_statuses(message):
+    conn = get_db_connection()
+    shops = conn.execute("SELECT name, debt, region FROM shops ORDER BY debt DESC LIMIT 20").fetchall()
+    orders = conn.execute("SELECT id, shop_name, status, total_sum, date FROM orders ORDER BY id DESC LIMIT 10").fetchall()
+    conn.close()
+    
+    text = "🏪 **Do'konlar qarzlari (Top 20):**\n"
+    for s in shops:
+        text += f"🔹 {s['name']} ({s['region']}) — **{s['debt']:,.0f} so'm**\n"
+        
+    text += "\n📦 **So'nggi buyurtmalar statusi:**\n"
+    for o in orders:
+        text += f"🆔 #{o['id']} | {o['shop_name']} | Status: **{o['status']}** | {o['total_sum']:,.0f} so'm\n"
+        
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
-def process_income_amount(message):
-    text = message.text
-    user_name = message.from_user.first_name
-    
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ Tasdiqlash", callback_data=f'inc_ok_{record_id}'))
-    
-    bot.send_message(ADMIN_ID, f"📥 **Yangi kirim so'rovi!**\n\nXodim: {user_name}\nSumma/Izoh: {text}", parse_mode="Markdown", reply_markup=markup)
-    bot.reply_to(message, "So'rov adminga yuborildi. Admin tasdiqlagach kassaga qo'shiladi.")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('inc_ok_'))
-def approve_income(call):
-    data_parts = call.data.split('_', 3)
-    worker_chat_id = data_parts[2]
-    income_text = data_parts[3]
-    
-    bot.answer_callback_query(call.id, "Kirim muvaffaqiyatli tasdiqlandi!")
-    bot.edit_message_text(f"✅ **Tasdiqlandi va bajarildi!**\n\n{call.message.text}", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    bot.send_message(worker_chat_id, f"✅ Siz kiritgan kirim ({income_text}) admin tomonidan tasdiqlandi!")
 
 @bot.message_handler(
     func=lambda message: message.text
@@ -597,7 +580,6 @@ def switch_role_menu(message):
   if not user:
     return
 
-  role_str = user['role']
   if message.text == '🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)':
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       markup.add(
@@ -648,7 +630,6 @@ def zavsklad_combine_and_send(call):
         conn.close()
         return
     
-    # Barcha yangi buyurtma mahsulotlarini bitta yaxlit hisobotga jamlaymiz
     combined_items = {}
     total_general_sum = 0
     order_ids = []
@@ -670,7 +651,6 @@ def zavsklad_combine_and_send(call):
     cart_items_list = [{'name': k, 'qty': v, 'price': 0} for k, v in combined_items.items()]
     bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
     
-    # Excel fayl yaratamiz
     excel_file = create_excel_invoice("Yaxlit_" + "_".join(order_ids), "Barcha Do'konlar", "Zavsklad", bugun, "optom", cart_items_list, "Yaxlit yig'ma buyurtma")
     
     items_text_str = ""
@@ -739,7 +719,6 @@ def ekspeditor_confirm_delivery(call):
     shop_name = order['shop_name']
     order_sum = order['total_sum']
     
-    # STATUSNI 'Yetkazildi' ga o'tkazamiz va faqat SHUNDAN KEYIN do'kon qarzini qo'shamiz!
     conn.execute("UPDATE orders SET status = 'Yetkazildi' WHERE id = ?", (order_id,))
     
     shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
@@ -970,7 +949,7 @@ def admin_product_detail(call):
   p_id = int(call.data.split('_')[-1])
   conn = get_db_connection()
   p = conn.execute(
-      'SELECT name, optom_price, chakana_price, stock FROM products WHERE id ='
+      'SELECT name, optom_price, chakana_price, stock, agent_percent FROM products WHERE id ='
       ' ?',
       (p_id,),
   ).fetchone()
@@ -979,9 +958,10 @@ def admin_product_detail(call):
     optom = p['optom_price'] if p['optom_price'] is not None else 0
     chakana = p['chakana_price'] if p['chakana_price'] is not None else 0
     stock = p['stock'] if p['stock'] is not None else 0
+    percent = p['agent_percent'] if p['agent_percent'] is not None else 5
     text = (
         f"📦 <b>Mahsulot:</b> {p['name']}\n💰 Optom: {optom:,.0f} so'm\n🛍"
-        f' Chakana: {chakana:,.0f} so\'m\n🔢 <b>Qoldiq:</b> {int(stock)}'
+        f" Chakana: {chakana:,.0f} so'm\n🔢 <b>Qoldiq:</b> {int(stock)}\n📊 Agent foizi: <b>{percent}%</b>"
     )
     markup = types.InlineKeyboardMarkup()
     markup.row(
@@ -1001,6 +981,11 @@ def admin_product_detail(call):
         ),
     )
     markup.row(
+        types.InlineKeyboardButton(
+            '📊 Agent Foizi (%)', callback_data=f'prc_percent_{p_id}'
+        ),
+    )
+    markup.row(
         types.InlineKeyboardButton("🗑 O'chirish", callback_data=f'stk_del_{p_id}')
     )
     bot.edit_message_text(
@@ -1014,7 +999,7 @@ def admin_product_detail(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('stk_', 'prc_')))
 def admin_stock_price_actions(call):
-  prefix, action, p_id = call.data.split('_')
+  prefix, action, p_id = call.data.split('_', 2)
   p_id = int(p_id)
   conn = get_db_connection()
   res = conn.execute('SELECT name FROM products WHERE id = ?', (p_id,)).fetchone()
@@ -1058,6 +1043,10 @@ def save_product_edits(message, prefix, action, p_id):
     elif action == 'chakana':
       conn.execute(
           'UPDATE products SET chakana_price = ? WHERE id = ?', (val, p_id)
+      )
+    elif action == 'percent':
+      conn.execute(
+          'UPDATE products SET agent_percent = ? WHERE id = ?', (val, p_id)
       )
     conn.commit()
     conn.close()
@@ -1225,7 +1214,6 @@ def change_status_logic(call):
   new_status = status_map[mode]
   conn = get_db_connection()
   
-  # Agar status Yetkazilsa va oldin Yetkazildi bo'lmagan bo'lsa qarzdorlikni qo'shamiz
   if new_status == 'Yetkazildi':
       ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
       if ord_data and ord_data['status'] != 'Yetkazildi':
@@ -1276,7 +1264,7 @@ def add_shop():
       request.form.get('region', ''),
       request.form.get('landmark', ''),
       request.form.get('inventory', ''),
-      request.form.get('territory', ''),  # <-- Territoriyani qabul qilamiz
+      request.form.get('territory', ''),
   )
   conn = get_db_connection()
   try:
@@ -1299,7 +1287,7 @@ def update_shop(shop_id):
   landmark = request.form.get('landmark', '')
   visit_days = request.form.get('visit_days', '')
   inventory = request.form.get('inventory', '')
-  territory = request.form.get('territory', '')  # <-- Territoriyani yangilash
+  territory = request.form.get('territory', '')
 
   conn = get_db_connection()
   try:
@@ -1322,12 +1310,13 @@ def update_product(prod_id):
   cost_price = float(request.form.get('cost_price', 0))
   optom_price = float(request.form.get('optom_price', 0))
   chakana_price = float(request.form.get('chakana_price', optom_price))
+  agent_percent = float(request.form.get('agent_percent', 5))
 
   conn = get_db_connection()
   try:
     conn.execute(
         'UPDATE products SET name = ?, category = ?, stock = ?, cost_price ='
-        ' ?, optom_price = ?, chakana_price = ? WHERE id = ?',
+        ' ?, optom_price = ?, chakana_price = ?, agent_percent = ? WHERE id = ?',
         (
             name,
             category,
@@ -1335,6 +1324,7 @@ def update_product(prod_id):
             cost_price,
             optom_price,
             chakana_price,
+            agent_percent,
             prod_id,
         ),
     )
@@ -1348,7 +1338,7 @@ def update_product(prod_id):
 @app.route('/adjust_stock_web', methods=['POST'])
 def adjust_stock_web():
   prod_id = request.form.get('prod_id')
-  action = request.form.get('action')  # 'plus' yoki 'minus'
+  action = request.form.get('action')
   qty = float(request.form.get('qty', 0))
 
   conn = get_db_connection()
@@ -1371,7 +1361,8 @@ def add_agent_web():
   phone = request.form.get('phone')
   tg_id = request.form.get('tg_id')
   role = request.form.get('role', 'agent')
-  territory = request.form.get('territory', '')  # <-- Agent hududi
+  territory = request.form.get('territory', '')
+  salary_percent = float(request.form.get('salary_percent', 5))
   if tg_id:
     try:
       tg_id = int(tg_id)
@@ -1382,8 +1373,8 @@ def add_agent_web():
     conn = get_db_connection()
     try:
       conn.execute(
-          'INSERT OR REPLACE INTO users (tg_id, name, phone, role, territory) VALUES (?, ?, ?, ?, ?)',
-          (tg_id, name, phone or '', role, territory),
+          'INSERT OR REPLACE INTO users (tg_id, name, phone, role, territory, salary_percent) VALUES (?, ?, ?, ?, ?, ?)',
+          (tg_id, name, phone or '', role, territory, salary_percent),
       )
       conn.commit()
     except Exception as e:
@@ -1572,12 +1563,13 @@ def update_agent(tg_id):
   phone = request.form.get('phone')
   role = request.form.get('role')
   territory = request.form.get('territory', '')
+  salary_percent = float(request.form.get('salary_percent', 5))
 
   conn = get_db_connection()
   try:
     conn.execute(
-        'UPDATE users SET name = ?, phone = ?, role = ?, territory = ? WHERE tg_id = ?',
-        (name, phone, role, territory, tg_id),
+        'UPDATE users SET name = ?, phone = ?, role = ?, territory = ?, salary_percent = ? WHERE tg_id = ?',
+        (name, phone, role, territory, salary_percent, tg_id),
     )
     conn.commit()
   except Exception as e:
@@ -1586,34 +1578,54 @@ def update_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
+# 4-TALAB: POSESHENIYA VA OBSHIY ZAKAZ URISH
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
+def start_order_choice(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
+    markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+    bot.send_message(message.chat.id, "Buyurtma berish turini tanlang:", reply_markup=markup)
+
+
+@bot.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
 def start_order(message):
   tg_id = message.from_user.id
+  order_type = message.text
   conn = get_db_connection()
   
-  # Agentning hududi va rolini bazadan tekshiramiz
-  user = conn.execute('SELECT territory, role FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
+  user = conn.execute('SELECT territory, role, name FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
   agent_territory = user['territory'] if user and user['territory'] else ''
+  agent_name = user['name'] if user else ''
   is_admin = (tg_id == ADMIN_ID or (user and 'admin' in user['role']))
   
-  # Agar admin bo'lmasa va hududi belgilangan bo'lsa - faqat o'sha hududdagi do'konlar chiqadi
-  if not is_admin and agent_territory:
-    shops = conn.execute('SELECT name FROM shops WHERE territory = ?', (agent_territory,)).fetchall()
+  if 'Posesheniya' in order_type:
+      shops = conn.execute('SELECT name, visit_days, region FROM shops').fetchall()
+      conn.close()
+      
+      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+      text = "📋 **Posesheniya bo'yicha do'konlar (Qaysi biri qolgani ko'rinib turadi):**\n\n"
+      for s in shops:
+          # Tekshiramiz: bugun bu do'konga zakaz qilinganmi?
+          ordered_today = conn.execute("SELECT id FROM orders WHERE shop_name = ? AND agent_name = ? AND date LIKE ?", (s['name'], agent_name, f"{datetime.now().strftime('%Y-%m-%d')}%")).fetchone()
+          status_icon = "✅ Zakaz qilingan" if ordered_today else "❌ Qolgan (Zakaz qilinmagan)"
+          
+          markup.add(types.KeyboardButton(s['name']))
+          text += f"🏢 {s['name']} — {status_icon} (Kunlar: _{s['visit_days'] or 'belgilanmagan'}_)\n"
+      markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+      bot.send_message(message.chat.id, text, parse_mode="Markdown")
+      msg = bot.send_message(message.chat.id, "Do'konni tanlang:", reply_markup=markup)
   else:
-    shops = conn.execute('SELECT name FROM shops').fetchall()
-    
-  conn.close()
-  
-  if not shops:
-    bot.send_message(message.chat.id, f"❌ Sizning hududingizga ({agent_territory or 'Barchasi'}) tegishli do'konlar topilmadi.")
-    return
-    
-  markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-  for s in shops:
-    markup.add(types.KeyboardButton(s['name']))
-  markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
-  
-  msg = bot.send_message(message.chat.id, f'Do\'konni tanlang (Hudud: {agent_territory or "Barchasi"}):', reply_markup=markup)
+      if not is_admin and agent_territory:
+        shops = conn.execute('SELECT name FROM shops WHERE territory = ?', (agent_territory,)).fetchall()
+      else:
+        shops = conn.execute('SELECT name FROM shops').fetchall()
+      conn.close()
+      
+      markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+      for s in shops: markup.add(types.KeyboardButton(s['name']))
+      markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
+      msg = bot.send_message(message.chat.id, 'Do\'konni tanlang (Obshiy):', reply_markup=markup)
+
   bot.register_next_step_handler(msg, choose_price_type)
 
 
@@ -1841,7 +1853,6 @@ def finish_order_with_comment(message):
     )
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  # MUHIM: Do'kon qarzini hozirCHA QO'SHMAYMIZ (yetkazilgandan keyin qo'shiladi)!
   shop_name = data['shop_name']
 
   agent_res = conn.execute(
@@ -2354,15 +2365,16 @@ HTML_TEMPLATE = """
                                 </div>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="productsTable">
-                                        <thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Optom narx</th><th>Skladni +- qilish</th></tr></thead>
+                                        <thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Optom narx</th><th>Agent Foiz (%)</th><th>Skladni +- qilish</th></tr></thead>
                                         <tbody>
                                             {% for p in products %}
                                             <tr>
-                                                <td class="product-row" onclick="openEditProductModal('{{ p['id'] }}', '{{ p['name'] | e }}', '{{ p['category'] | e }}', '{{ p['stock'] }}', '{{ p['cost_price'] }}', '{{ p['optom_price'] }}', '{{ p['chakana_price'] }}')">
+                                                <td class="product-row" onclick="openEditProductModal('{{ p['id'] }}', '{{ p['name'] | e }}', '{{ p['category'] | e }}', '{{ p['stock'] }}', '{{ p['cost_price'] }}', '{{ p['optom_price'] }}', '{{ p['chakana_price'] }}', '{{ p['agent_percent'] }}')">
                                                     <b>{{ p['name'] }}</b><br><small class="text-muted">{{ p['category'] }}</small>
                                                 </td>
                                                 <td><span class="badge bg-success fs-6">{{ p['stock'] }}</span></td>
                                                 <td>{{ "{:,.0f}".format(p['optom_price']) }}</td>
+                                                <td><span class="badge bg-secondary">{{ p['agent_percent'] }}%</span></td>
                                                 <td>
                                                     <form action="/adjust_stock_web" method="POST" class="d-flex gap-1 align-items-center">
                                                         <input type="hidden" name="prod_id" value="{{ p['id'] }}">
@@ -2402,24 +2414,24 @@ HTML_TEMPLATE = """
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud / Zona):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1" required></div>
     
-    <div class="mb-3"><label class="form-label small fw-bold">Hududi (Tarif):</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
-    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
-    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar:</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
-    <div class="mb-3">
-        <label class="form-label small fw-bold">Tashrif kunlari:</label>
-        <div class="d-flex flex-wrap gap-1">
-            <span class="day-badge" onclick="toggleDay(this, 'D')">D</span>
-            <span class="day-badge" onclick="toggleDay(this, 'S')">S</span>
-            <span class="day-badge" onclick="typeDay(this, 'Ch')">Ch</span>
-            <span class="day-badge" onclick="toggleDay(this, 'P')">P</span>
-            <span class="day-badge" onclick="toggleDay(this, 'J')">J</span>
-            <span class="day-badge" onclick="toggleDay(this, 'Sh')">Sh</span>
-            <span class="day-badge" onclick="toggleDay(this, 'Ya')">Ya</span>
-        </div>
-        <input type="hidden" name="visit_days" id="visit_days_input">
-    </div>
-    <button type="submit" class="btn btn-success w-100">Saqlash</button>
-</form>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Hududi (Tarif):</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar:</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">Tashrif kunlari:</label>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            <span class="day-badge" onclick="toggleDay(this, 'D')">D</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'S')">S</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'Ch')">Ch</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'P')">P</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'J')">J</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'Sh')">Sh</span>
+                                            <span class="day-badge" onclick="toggleDay(this, 'Ya')">Ya</span>
+                                        </div>
+                                        <input type="hidden" name="visit_days" id="visit_days_input">
+                                    </div>
+                                    <button type="submit" class="btn btn-success w-100">Saqlash</button>
+                                </form>
                             </div>
                         </div>
                         <div class="col-md-8">
@@ -2462,61 +2474,48 @@ HTML_TEMPLATE = """
                             <div class="card-glass p-4">
                                 <h5 class="fw-bold mb-3"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Yangi Xodim Qo'shish</h5>
                                 <form action="/add_agent_web" method="POST">
-    <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
-    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
-    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Masalan: 123456789" required></div>
-    
-    <!-- 👇 MANA BU QATOR YANGI QO'SHILDI (Territoriya) -->
-    <div class="mb-3"><label class="form-label small fw-bold">Biriktirilgan Territoriya (Hudud):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
-    
-    <div class="mb-3">
-        <label class="form-label small fw-bold">Rolini tanlang:</label>
-        <select name="role" class="form-select">
-            <option value="agent">Agent</option>
-            <option value="sex">Sex xodimi</option>
-            <option value="zavsklad">Zavsklad</option>
-            <option value="ekspeditor">Ekspeditor</option>
-            <option value="agent,sex">Agent va Sex xodimi</option>
-        </select>
-    </div>
-    <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
-</form>
+                                    <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Masalan: 123456789" required></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Biriktirilgan Territoriya (Hudud):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Oylik bazaviy foizi (%):</label><input type="number" step="any" name="salary_percent" class="form-control" value="5"></div>
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">Rolini tanlang:</label>
+                                        <select name="role" class="form-select">
+                                            <option value="agent">Agent</option>
+                                            <option value="sex">Sex xodimi</option>
+                                            <option value="zavsklad">Zavsklad</option>
+                                            <option value="ekspeditor">Ekspeditor</option>
+                                            <option value="agent,sex">Agent va Sex xodimi</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
+                                </form>
                             </div>
                         </div>
                         <div class="col-md-8">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Xodimlar Nazorati</h5>
+                                <h5 class="fw-bold mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Xodimlar Nazorati va Oyliklar</h5>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle">
-                                        <thead><tr><th>F.I.O</th><th>Telefon</th><th>Telegram ID</th><th>Roli / Status</th><th>Amallar</th></tr></thead>
+                                        <thead><tr><th>F.I.O</th><th>Roli / Territoriya</th><th>Olingan Avans</th><th>Hisoblangan Oylik (+ / -)</th><th>Amallar</th></tr></thead>
                                         <tbody>
-                                            {% for a in users %}
-                                            {% if a['role'] != 'admin' %}
+                                            {% for a in agents_salary_data %}
                                             <tr>
-                                                <td><b>{{ a['name'] }}</b></td>
-                                                <td>{{ a['phone'] }}</td>
-                                                <td><code>{{ a['tg_id'] }}</code></td>
+                                                <td><b>{{ a['name'] }}</b><br><small class="text-muted">{{ a['phone'] }}</small></td>
+                                                <td><span class="badge bg-dark">{{ a['role'] }}</span><br><small class="text-primary">{{ a['territory'] or 'Barchasi' }}</small></td>
+                                                <td><b class="text-danger">{{ "{:,.0f}".format(a['advance_sum']) }} so'm</b></td>
                                                 <td>
-                                                    {% if a['role'] == 'agent' %}<span class="badge bg-success">Agent</span>
-                                                    {% elif a['role'] == 'sex' %}<span class="badge bg-info text-dark">Sex xodimi</span>
-                                                    {% elif a['role'] == 'zavsklad' %}<span class="badge bg-warning text-dark">Zavsklad</span>
-                                                    {% elif a['role'] == 'ekspeditor' %}<span class="badge bg-primary">Ekspeditor</span>
-                                                    {% elif a['role'] == 'pending' %}<span class="badge bg-secondary text-dark">Tasdiq kutyapti</span>
-                                                    {% else %}<span class="badge bg-dark">{{ a['role'] }}</span>{% endif %}
+                                                    <b class="text-success">{{ "{:,.0f}".format(a['calculated_salary']) }} so'm</b><br>
+                                                    <small class="text-muted">Yakuniy (+/-): <b>{{ "{:,.0f}".format(a['final_salary']) }} so'm</b></small>
                                                 </td>
                                                 <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
-                                                    {% if a['role'] == 'pending' %}
-                                                    <form action="/approve_agent/{{ a['tg_id'] }}" method="POST" class="d-inline">
-                                                        <button type="submit" class="btn btn-sm btn-success py-0 px-2"><i class="bi bi-check-lg me-1"></i>Tasdiqlash</button>
-                                                    </form>
-                                                    {% endif %}
-                                                    <form action="/delete_agent/{{ a['tg_id'] }}" method="POST" class="d-inline" onsubmit="return confirm('Haqiqatan ham o\'chirmoqchimisiz?');">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}', '{{ a['salary_percent'] }}')"><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    <form action="/delete_agent/{{ a['tg_id'] }}" method="POST" class="d-inline" onsubmit="return confirm('O\'chirmoqchimisiz?');">
                                                         <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
                                                     </form>
                                                 </td>
                                             </tr>
-                                            {% endif %}
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -2526,8 +2525,8 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div class="tab-pane fade" id="tab-kassa">
-                    <div class="row g-4">
-                        <div class="col-md-6">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-4">
                             <div class="card-glass p-4 border-start border-success border-4">
                                 <h5 class="fw-bold text-success mb-3">Kirim qilish</h5>
                                 <form action="/add_income" method="POST">
@@ -2537,7 +2536,7 @@ HTML_TEMPLATE = """
                                 </form>
                             </div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="card-glass p-4 border-start border-danger border-4">
                                 <h5 class="fw-bold text-danger mb-3">Chiqim (Rasxod)</h5>
                                 <form action="/add_expense" method="POST">
@@ -2545,6 +2544,57 @@ HTML_TEMPLATE = """
                                     <div class="mb-3"><label class="form-label small fw-bold">Summa:</label><input type="number" name="amount" class="form-control" required></div>
                                     <button type="submit" class="btn btn-danger w-100">Chiqim</button>
                                 </form>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card-glass p-4 border-start border-warning border-4">
+                                <h5 class="fw-bold text-warning mb-3">Xodimga Avans Berish</h5>
+                                <form action="/add_advance" method="POST">
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-bold">Xodim ismi:</label>
+                                        <select name="worker_name" class="form-select" required>
+                                            <option value="">-- Xodimni tanlang --</option>
+                                            {% for u in users %}{% if u['role'] != 'admin' %}<option value="{{ u['name'] }}">{{ u['name'] }}</option>{% endif %}{% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Avans Summasi:</label><input type="number" name="amount" class="form-control" required></div>
+                                    <button type="submit" class="btn btn-warning w-100 text-dark fw-bold">Avans yozish</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 6-TALAB: KASSADAGI KIRIM, CHIQIM VA AVANSLAR TARIXI -->
+                    <div class="card-glass p-4">
+                        <h5 class="fw-bold mb-3"><i class="bi bi-clock-history me-2 text-primary"></i>Kassa Tarixi (Kirim / Chiqim / Avanslar)</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-success">📥 Kirimlar Tarixi:</h6>
+                                <div class="table-responsive" style="max-height: 250px;">
+                                    <table class="table table-sm table-bordered">
+                                        <thead><tr><th>Sana</th><th>Manba</th><th>Summa</th></tr></thead>
+                                        <tbody>
+                                            {% for i in incomes_list %}
+                                            <tr><td><small>{{ i['date'] }}</small></td><td>{{ i['source'] }}</td><td class="text-success fw-bold">{{ "{:,.0f}".format(i['amount']) }}</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-danger">📤 Chiqim va Avanslar Tarixi:</h6>
+                                <div class="table-responsive" style="max-height: 250px;">
+                                    <table class="table table-sm table-bordered">
+                                        <thead><tr><th>Sana</th><th>Sabab / Xodim</th><th>Summa</th></tr></thead>
+                                        <tbody>
+                                            {% for e in expenses_list %}
+                                            <tr><td><small>{{ e['date'] }}</small></td><td>{{ e['reason'] }}</td><td class="text-danger fw-bold">{{ "{:,.0f}".format(e['amount']) }}</td></tr>
+                                            {% endfor %}
+                                            {% for a in advances_list %}
+                                            <tr><td><small>{{ a['date'] }}</small></td><td>[Avans] {{ a['worker_name'] }}</td><td class="text-warning fw-bold">{{ "{:,.0f}".format(a['amount']) }}</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2577,34 +2627,11 @@ HTML_TEMPLATE = """
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label small fw-bold">Nomi:</label><input type="text" name="name" id="edit_shop_name" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" id="edit_shop_phone" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud):</label><input type="text" name="territory" id="edit_shop_territory" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" id="edit_shop_region" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" id="edit_shop_landmark" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Tashrif kunlari:</label><input type="text" name="visit_days" id="edit_shop_visit_days" class="form-control"></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Inventarlar:</label><input type="text" name="inventory" id="edit_shop_inventory" class="form-control"></div>
-                </div>
-                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="editOrderModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form id="editOrderForm" method="POST">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Buyurtmani Tahrirlash</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Do'kon:</label>
-                        <select name="shop_name" id="edit_order_shop" class="form-select" required>
-                            {% for s in shops %}<option value="{{ s['name'] }}">{{ s['name'] }}</option>{% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Chegirma (Skidka so'mda):</label><input type="number" step="any" name="discount" id="edit_order_discount" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Izoh:</label><input type="text" name="comment" id="edit_order_comment" class="form-control"></div>
                 </div>
                 <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
             </form>
@@ -2627,6 +2654,7 @@ HTML_TEMPLATE = """
                     <div class="mb-3"><label class="form-label small fw-bold">Tan narx:</label><input type="number" step="any" name="cost_price" id="edit_prod_cost" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Optom narx:</label><input type="number" step="any" name="optom_price" id="edit_prod_optom" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Chakana narx:</label><input type="number" step="any" name="chakana_price" id="edit_prod_chakana" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Agent Foizi (%):</label><input type="number" step="any" name="agent_percent" id="edit_prod_percent" class="form-control" required></div>
                 </div>
                 <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
             </form>
@@ -2639,13 +2667,14 @@ HTML_TEMPLATE = """
         <div class="modal-content">
             <form id="editAgentForm" method="POST">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Xodimni Tahrirlash va Hudud Biriktirish</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Xodimni Tahrirlash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" id="edit_agent_name" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" id="edit_agent_phone" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud):</label><input type="text" name="territory" id="edit_agent_territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud):</label><input type="text" name="territory" id="edit_agent_territory" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Bazaviy Oylik Foizi (%):</label><input type="number" step="any" name="salary_percent" id="edit_agent_salary_percent" class="form-control"></div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Roli:</label>
                         <select name="role" id="edit_agent_role" class="form-select">
@@ -2688,7 +2717,7 @@ HTML_TEMPLATE = """
         document.getElementById('edit_shop_inventory').value = inventory;
         new bootstrap.Modal(document.getElementById('editShopModal')).show();
     }
-    function openEditProductModal(id, name, category, stock, cost, optom, chakana) {
+    function openEditProductModal(id, name, category, stock, cost, optom, chakana, percent) {
         document.getElementById('editProductForm').action = '/update_product/' + id;
         document.getElementById('edit_prod_name').value = name;
         document.getElementById('edit_prod_category').value = category;
@@ -2696,22 +2725,17 @@ HTML_TEMPLATE = """
         document.getElementById('edit_prod_cost').value = cost;
         document.getElementById('edit_prod_optom').value = optom;
         document.getElementById('edit_prod_chakana').value = chakana;
+        document.getElementById('edit_prod_percent').value = percent;
         new bootstrap.Modal(document.getElementById('editProductModal')).show();
     }
-    function openEditAgentModal(tgId, name, phone, role, territory) {
+    function openEditAgentModal(tgId, name, phone, role, territory, salaryPercent) {
         document.getElementById('editAgentForm').action = '/update_agent/' + tgId;
         document.getElementById('edit_agent_name').value = name;
         document.getElementById('edit_agent_phone').value = phone;
         document.getElementById('edit_agent_role').value = role;
         document.getElementById('edit_agent_territory').value = territory;
+        document.getElementById('edit_agent_salary_percent').value = salaryPercent;
         new bootstrap.Modal(document.getElementById('editAgentModal')).show();
-    }
-    function openEditOrderModal(id, shopName, discount, comment) {
-        document.getElementById('editOrderForm').action = '/update_order/' + id;
-        document.getElementById('edit_order_shop').value = shopName;
-        document.getElementById('edit_order_discount').value = discount;
-        document.getElementById('edit_order_comment').value = comment;
-        new bootstrap.Modal(document.getElementById('editOrderModal')).show();
     }
     function filterShopsTable() {
         let input = document.getElementById('shopSearchInput').value.toLowerCase();
@@ -2760,16 +2784,7 @@ HTML_TEMPLATE = """
     function removeRow(btn) {
         if (document.querySelectorAll('.order-item-row').length > 1) {
             btn.closest('.order-item-row').remove();
-            updateSelectedIds();
         } else { alert("Kamida bitta mahsulot bo'lishi kerak!"); }
-    }
-    function toggleSelectAllOrders(master) {
-        document.querySelectorAll('.order-checkbox').forEach(cb => { cb.checked = master.checked; });
-        updateSelectedIds();
-    }
-    function updateSelectedIds() {
-        let ids = Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
-        document.getElementById('selectedIdsInput').value = ids.join(',');
     }
 </script>
 </body>
@@ -2804,16 +2819,53 @@ def operator_dashboard():
   daily_sum_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE date LIKE ? AND status != 'Bekor'", (f'{start_date}%',)).fetchone()
   daily_sum = daily_sum_res['s'] if daily_sum_res and daily_sum_res['s'] else 0
 
-  total_inc = conn.execute('SELECT SUM(amount) as s FROM incomes').fetchone()
-  inc_sum = total_inc['s'] if total_inc and total_inc['s'] else 0
+  incomes_list = conn.execute('SELECT * FROM incomes ORDER BY id DESC LIMIT 50').fetchall()
+  expenses_list = conn.execute('SELECT * FROM expenses ORDER BY id DESC LIMIT 50').fetchall()
+  advances_list = conn.execute('SELECT * FROM advances ORDER BY id DESC LIMIT 50').fetchall()
 
-  total_exp = conn.execute('SELECT SUM(amount) as s FROM expenses').fetchone()
-  exp_sum = total_exp['s'] if total_exp and total_exp['s'] else 0
+  inc_sum = conn.execute('SELECT SUM(amount) as s FROM incomes').fetchone()['s'] or 0
+  exp_sum = conn.execute('SELECT SUM(amount) as s FROM expenses').fetchone()['s'] or 0
+  adv_sum = conn.execute('SELECT SUM(amount) as s FROM advances').fetchone()['s'] or 0
 
-  kassa_balance = inc_sum - exp_sum
+  kassa_balance = inc_sum - (exp_sum + adv_sum)
 
   total_debt_res = conn.execute('SELECT SUM(debt) as s FROM shops').fetchone()
   total_debt = total_debt_res['s'] if total_debt_res and total_debt_res['s'] else 0
+
+  # 3-TALAB: AGENTLARNING KATEGORIYALAR BO'YICHA FOIZLI OYLIGINI HISoblash
+  agents_salary_data = []
+  for u in users:
+      if 'agent' in u['role']:
+          u_dict = dict(u)
+          agent_orders = conn.execute("SELECT items_text, total_sum FROM orders WHERE agent_name = ? AND status != 'Bekor'", (u['name'],)).fetchall()
+          
+          calculated_salary = 0
+          for ao in agent_orders:
+              for line in ao['items_text'].split('\n'):
+                  if line.strip():
+                      # Masalan: "Pelmen /300 gr - 2x = 28,000 so'm"
+                      try:
+                          parts = line.split(' - ')
+                          p_name = parts[0].strip()
+                          qty_part = parts[1].split('x')[0].strip()
+                          qty = float(qty_part)
+                          
+                          prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
+                          if prod_info:
+                              p_price = prod_info['optom_price'] or 0
+                              p_perc = prod_info['agent_percent'] or 5
+                              item_total = p_price * qty
+                              calculated_salary += (item_total * p_perc / 100)
+                      except:
+                          pass
+          
+          adv_res = conn.execute("SELECT SUM(amount) as s FROM advances WHERE worker_name = ?", (u['name'],)).fetchone()
+          total_adv = adv_res['s'] if adv_res and adv_res['s'] else 0
+          
+          u_dict['advance_sum'] = total_adv
+          u_dict['calculated_salary'] = calculated_salary
+          u_dict['final_salary'] = calculated_salary - total_adv
+          agents_salary_data.append(u_dict)
 
   cat_data = conn.execute('SELECT category, SUM(stock * optom_price) as val FROM products GROUP BY category').fetchall()
   cat_table_data = []
@@ -2858,6 +2910,10 @@ def operator_dashboard():
       total_income=inc_sum,
       start_date=start_date,
       end_date=end_date,
+      incomes_list=incomes_list,
+      expenses_list=expenses_list,
+      advances_list=advances_list,
+      agents_salary_data=agents_salary_data,
   )
 
 
@@ -2893,8 +2949,6 @@ def web_add_order():
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = total_sum - discount
-
-  # MUHIM: Vebda ham buyurtma berilganda qarz darhol qo'shilmaydi, faqat 'Yetkazildi' bo'lganda qo'shiladi!
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
@@ -3104,6 +3158,18 @@ def add_expense():
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute('INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)', (reason, amount, today))
+  conn.commit()
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
+@app.route('/add_advance', methods=['POST'])
+def add_advance():
+  worker_name = request.form['worker_name']
+  amount = float(request.form['amount'])
+  today = datetime.now().strftime('%Y-%m-%d %H:%M')
+  conn = get_db_connection()
+  conn.execute('INSERT INTO advances (worker_name, amount, date) VALUES (?, ?, ?)', (worker_name, amount, today))
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
