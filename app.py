@@ -207,10 +207,11 @@ def init_web_db():
       ('Jahon Market', '', 'Termiz shahar', 'indenim'),
       ('Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
       ('Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
+      ('878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
   ]
   for s_name, s_phone, s_region, s_territory in initial_shops:
     cursor.execute(
-        '''INSERT OR IGNORE INTO shops (name, phone, debt, region, territory) VALUES (?, ?, 0, ?, ?, ?)''',
+        '''INSERT OR IGNORE INTO shops (name, phone, debt, region, territory) VALUES (?, ?, 0, ?, ?)''',
         (s_name, s_phone, s_region, s_territory),
     )
 
