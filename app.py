@@ -100,6 +100,8 @@ def init_web_db():
       ("ALTER TABLE shops ADD COLUMN region TEXT DEFAULT ''", "region"),
       ("ALTER TABLE shops ADD COLUMN landmark TEXT DEFAULT ''", "landmark"),
       ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
+      ("ALTER TABLE shops ADD COLUMN territory TEXT DEFAULT ''", "territory"),       # <-- 1-QO'SHILGAN QATOR
+      ("ALTER TABLE users ADD COLUMN territory TEXT DEFAULT ''", "territory"),       # <-- 2-QO'SHILGAN QATOR
       ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
       ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
       ("ALTER TABLE orders ADD COLUMN comment TEXT DEFAULT ''", "comment"),
@@ -1241,20 +1243,20 @@ def approve_agent_cb(call):
 
 @app.route('/add_shop', methods=['POST'])
 def add_shop():
-  name, phone, visit_days, region, landmark, inventory = (
+  name, phone, visit_days, region, landmark, inventory, territory = (
       request.form['name'],
       request.form['phone'],
       request.form.get('visit_days', ''),
       request.form.get('region', ''),
       request.form.get('landmark', ''),
       request.form.get('inventory', ''),
+      request.form.get('territory', ''),  # <-- Territoriyani qabul qilamiz
   )
   conn = get_db_connection()
   try:
     conn.execute(
-        'INSERT INTO shops (name, phone, debt, visit_days, region, landmark,'
-        ' inventory) VALUES (?, ?, 0, ?, ?, ?, ?)',
-        (name, phone, visit_days, region, landmark, inventory),
+        'INSERT INTO shops (name, phone, debt, visit_days, region, landmark, inventory, territory) VALUES (?, ?, 0, ?, ?, ?, ?, ?)',
+        (name, phone, visit_days, region, landmark, inventory, territory),
     )
     conn.commit()
   except:
@@ -1271,13 +1273,13 @@ def update_shop(shop_id):
   landmark = request.form.get('landmark', '')
   visit_days = request.form.get('visit_days', '')
   inventory = request.form.get('inventory', '')
+  territory = request.form.get('territory', '')  # <-- Territoriyani yangilash
 
   conn = get_db_connection()
   try:
     conn.execute(
-        'UPDATE shops SET name = ?, phone = ?, region = ?, landmark = ?,'
-        ' visit_days = ?, inventory = ? WHERE id = ?',
-        (name, phone, region, landmark, visit_days, inventory, shop_id),
+        'UPDATE shops SET name = ?, phone = ?, region = ?, landmark = ?, visit_days = ?, inventory = ?, territory = ? WHERE id = ?',
+        (name, phone, region, landmark, visit_days, inventory, territory, shop_id),
     )
     conn.commit()
   except Exception as e:
@@ -1343,6 +1345,7 @@ def add_agent_web():
   phone = request.form.get('phone')
   tg_id = request.form.get('tg_id')
   role = request.form.get('role', 'agent')
+  territory = request.form.get('territory', '')  # <-- Agent hududi
   if tg_id:
     try:
       tg_id = int(tg_id)
@@ -1353,9 +1356,8 @@ def add_agent_web():
     conn = get_db_connection()
     try:
       conn.execute(
-          'INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?, ?,'
-          ' ?, ?)',
-          (tg_id, name, phone or '', role),
+          'INSERT OR REPLACE INTO users (tg_id, name, phone, role, territory) VALUES (?, ?, ?, ?, ?)',
+          (tg_id, name, phone or '', role, territory),
       )
       conn.commit()
     except Exception as e:
@@ -1540,17 +1542,32 @@ def web_delete_agent(tg_id):
 
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order(message):
+  tg_id = message.from_user.id
   conn = get_db_connection()
-  shops = conn.execute('SELECT name FROM shops').fetchall()
+  
+  # Agentning hududi va rolini bazadan tekshiramiz
+  user = conn.execute('SELECT territory, role FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
+  agent_territory = user['territory'] if user and user['territory'] else ''
+  is_admin = (tg_id == ADMIN_ID or (user and 'admin' in user['role']))
+  
+  # Agar admin bo'lmasa va hududi belgilangan bo'lsa - faqat o'sha hududdagi do'konlar chiqadi
+  if not is_admin and agent_territory:
+    shops = conn.execute('SELECT name FROM shops WHERE territory = ?', (agent_territory,)).fetchall()
+  else:
+    shops = conn.execute('SELECT name FROM shops').fetchall()
+    
   conn.close()
+  
   if not shops:
-    bot.send_message(message.chat.id, "❌ Do'konlar yo'q.")
+    bot.send_message(message.chat.id, f"❌ Sizning hududingizga ({agent_territory or 'Barchasi'}) tegishli do'konlar topilmadi.")
     return
+    
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
   for s in shops:
     markup.add(types.KeyboardButton(s['name']))
   markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
-  msg = bot.send_message(message.chat.id, 'Do\'konni tanlang:', reply_markup=markup)
+  
+  msg = bot.send_message(message.chat.id, f'Do\'konni tanlang (Hudud: {agent_territory or "Barchasi"}):', reply_markup=markup)
   bot.register_next_step_handler(msg, choose_price_type)
 
 
@@ -2337,24 +2354,26 @@ HTML_TEMPLATE = """
                                 <form action="/add_shop" method="POST">
                                     <div class="mb-3"><label class="form-label small fw-bold">Nomi:</label><input type="text" name="name" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon:</label><input type="text" name="phone" class="form-control" required></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Hududi:</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar:</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
-                                    <div class="mb-3">
-                                        <label class="form-label small fw-bold">Tashrif kunlari:</label>
-                                        <div class="d-flex flex-wrap gap-1">
-                                            <span class="day-badge" onclick="toggleDay(this, 'D')">D</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'S')">S</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'Ch')">Ch</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'P')">P</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'J')">J</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'Sh')">Sh</span>
-                                            <span class="day-badge" onclick="toggleDay(this, 'Ya')">Ya</span>
-                                        </div>
-                                        <input type="hidden" name="visit_days" id="visit_days_input">
-                                    </div>
-                                    <button type="submit" class="btn btn-success w-100">Saqlash</button>
-                                </form>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud / Zona):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1" required></div>
+    
+    <div class="mb-3"><label class="form-label small fw-bold">Hududi (Tarif):</label><input type="text" name="region" class="form-control" placeholder="Masalan: Chilonzor"></div>
+    <div class="mb-3"><label class="form-label small fw-bold">Orienteri:</label><input type="text" name="landmark" class="form-control" placeholder="Masalan: Makro yonida"></div>
+    <div class="mb-3"><label class="form-label small fw-bold">Berilgan inventarlar:</label><input type="text" name="inventory" class="form-control" placeholder="Masalan: 1 ta Xolodilnik"></div>
+    <div class="mb-3">
+        <label class="form-label small fw-bold">Tashrif kunlari:</label>
+        <div class="d-flex flex-wrap gap-1">
+            <span class="day-badge" onclick="toggleDay(this, 'D')">D</span>
+            <span class="day-badge" onclick="toggleDay(this, 'S')">S</span>
+            <span class="day-badge" onclick="typeDay(this, 'Ch')">Ch</span>
+            <span class="day-badge" onclick="toggleDay(this, 'P')">P</span>
+            <span class="day-badge" onclick="toggleDay(this, 'J')">J</span>
+            <span class="day-badge" onclick="toggleDay(this, 'Sh')">Sh</span>
+            <span class="day-badge" onclick="toggleDay(this, 'Ya')">Ya</span>
+        </div>
+        <input type="hidden" name="visit_days" id="visit_days_input">
+    </div>
+    <button type="submit" class="btn btn-success w-100">Saqlash</button>
+</form>
                             </div>
                         </div>
                         <div class="col-md-8">
@@ -2397,21 +2416,25 @@ HTML_TEMPLATE = """
                             <div class="card-glass p-4">
                                 <h5 class="fw-bold mb-3"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Yangi Xodim Qo'shish</h5>
                                 <form action="/add_agent_web" method="POST">
-                                    <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Masalan: 123456789" required></div>
-                                    <div class="mb-3">
-                                        <label class="form-label small fw-bold">Rolini tanlang:</label>
-                                        <select name="role" class="form-select">
-                                            <option value="agent">Agent</option>
-                                            <option value="sex">Sex xodimi</option>
-                                            <option value="zavsklad">Zavsklad</option>
-                                            <option value="ekspeditor">Ekspeditor</option>
-                                            <option value="agent,sex">Agent va Sex xodimi</option>
-                                        </select>
-                                    </div>
-                                    <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
-                                </form>
+    <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
+    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
+    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Masalan: 123456789" required></div>
+    
+    <!-- 👇 MANA BU QATOR YANGI QO'SHILDI (Territoriya) -->
+    <div class="mb-3"><label class="form-label small fw-bold">Biriktirilgan Territoriya (Hudud):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
+    
+    <div class="mb-3">
+        <label class="form-label small fw-bold">Rolini tanlang:</label>
+        <select name="role" class="form-select">
+            <option value="agent">Agent</option>
+            <option value="sex">Sex xodimi</option>
+            <option value="zavsklad">Zavsklad</option>
+            <option value="ekspeditor">Ekspeditor</option>
+            <option value="agent,sex">Agent va Sex xodimi</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary w-100">Foydalanuvchini Saqlash</button>
+</form>
                             </div>
                         </div>
                         <div class="col-md-8">
