@@ -170,7 +170,7 @@ def init_web_db():
       ('Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli'),
       ('Hoji ona market', '', 'Termiz shahar', 'Med yoni'),
       ('Chinor market', '', 'Termiz shahar', 'Med yoni'),
-      ('16 market', '', '', 'Termiz shahar', 'Begoyim roʻparasi'),
+      ('16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
       ('Lada yoni', '', 'Termiz shahar', 'Lada yoni'),
       ('Alibek aka', '', 'Termiz shahar', 'Sohil pastlik'),
       ('4 aka-uka', '', 'Termiz shahar', 'sohil'),
@@ -208,7 +208,7 @@ def init_web_db():
       ('Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
       ('Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
       ('878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
-      (' Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
+      ('Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
   ]
   for s_name, s_phone, s_region, s_territory in initial_shops:
     cursor.execute(
