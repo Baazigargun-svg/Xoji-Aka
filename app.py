@@ -1540,6 +1540,26 @@ def web_delete_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
+@app.route('/update_agent/<int:tg_id>', methods=['POST'])
+def update_agent(tg_id):
+  name = request.form.get('name')
+  phone = request.form.get('phone')
+  role = request.form.get('role')
+  territory = request.form.get('territory', '')
+
+  conn = get_db_connection()
+  try:
+    conn.execute(
+        'UPDATE users SET name = ?, phone = ?, role = ?, territory = ? WHERE tg_id = ?',
+        (name, phone, role, territory, tg_id),
+    )
+    conn.commit()
+  except Exception as e:
+    print('Agentni tahrirlash xatosi:', e)
+  conn.close()
+  return redirect(url_for('operator_dashboard'))
+
+
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order(message):
   tg_id = message.from_user.id
@@ -2459,6 +2479,8 @@ HTML_TEMPLATE = """
                                                     {% else %}<span class="badge bg-dark">{{ a['role'] }}</span>{% endif %}
                                                 </td>
                                                 <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditAgentModal('{{ a['tg_id'] }}', '{{ a['name'] | e }}', '{{ a['phone'] | e }}', '{{ a['role'] | e }}', '{{ a['territory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
                                                     {% if a['role'] == 'pending' %}
                                                     <form action="/approve_agent/{{ a['tg_id'] }}" method="POST" class="d-inline">
                                                         <button type="submit" class="btn btn-sm btn-success py-0 px-2"><i class="bi bi-check-lg me-1"></i>Tasdiqlash</button>
@@ -2587,6 +2609,35 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
+<div class="modal fade" id="editAgentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editAgentForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Xodimni Tahrirlash va Hudud Biriktirish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" id="edit_agent_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" id="edit_agent_phone" class="form-control"></div>
+                    <div class="mb-3"><label class="form-label small fw-bold">Territoriya (Hudud):</label><input type="text" name="territory" id="edit_agent_territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Roli:</label>
+                        <select name="role" id="edit_agent_role" class="form-select">
+                            <option value="agent">Agent</option>
+                            <option value="sex">Sex xodimi</option>
+                            <option value="zavsklad">Zavsklad</option>
+                            <option value="ekspeditor">Ekspeditor</option>
+                            <option value="agent,sex">Agent va Sex xodimi</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">Saqlash</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function toggleNewProd() {
@@ -2621,6 +2672,14 @@ HTML_TEMPLATE = """
         document.getElementById('edit_prod_optom').value = optom;
         document.getElementById('edit_prod_chakana').value = chakana;
         new bootstrap.Modal(document.getElementById('editProductModal')).show();
+    }
+    function openEditAgentModal(tgId, name, phone, role, territory) {
+        document.getElementById('editAgentForm').action = '/update_agent/' + tgId;
+        document.getElementById('edit_agent_name').value = name;
+        document.getElementById('edit_agent_phone').value = phone;
+        document.getElementById('edit_agent_role').value = role;
+        document.getElementById('edit_agent_territory').value = territory;
+        new bootstrap.Modal(document.getElementById('editAgentModal')).show();
     }
     function openEditOrderModal(id, shopName, discount, comment) {
         document.getElementById('editOrderForm').action = '/update_order/' + id;
