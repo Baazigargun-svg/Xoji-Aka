@@ -465,7 +465,8 @@ def get_main_menu(role):
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
     )
     markup.row(
-        types.KeyboardButton("📊 Do'konlar qarzi va Statuslar"),
+        types.KeyboardButton("📊 Do'konlar qarzi"),
+        types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'sex':
@@ -486,7 +487,8 @@ def get_main_menu(role):
         types.KeyboardButton('📜 Yetkazilgan Buyurtmalar Tarixi'),
     )
     markup.row(
-        types.KeyboardButton("📊 Do'konlar qarzi va Statuslar"),
+        types.KeyboardButton("📊 Do'konlar qarzi"),
+        types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   else:
@@ -546,22 +548,37 @@ def start_command(message):
     )
 
 
-# 1, 2-TALAB: AGENT VA EKSPEDITOR UCHUN QARZ VA STATUSLARNI KO'RISH
-@bot.message_handler(func=lambda message: message.text == "📊 Do'konlar qarzi va Statuslar")
-def view_shops_debt_and_statuses(message):
+# 1-TUGMA: FAQAT QARZI BOR DO'KONLAR RO'YXATI
+@bot.message_handler(func=lambda message: message.text == "📊 Do'konlar qarzi")
+def view_shops_debt_only(message):
     conn = get_db_connection()
-    shops = conn.execute("SELECT name, debt, region FROM shops ORDER BY debt DESC LIMIT 20").fetchall()
-    orders = conn.execute("SELECT id, shop_name, status, total_sum, date FROM orders ORDER BY id DESC LIMIT 10").fetchall()
+    shops = conn.execute("SELECT name, debt, region FROM shops WHERE debt > 0 ORDER BY debt DESC").fetchall()
     conn.close()
     
-    text = "🏪 **Do'konlar qarzlari (Top 20):**\n"
+    if not shops:
+        bot.send_message(message.chat.id, "✅ Hozirda qarzi bor do'konlar mavjud emas (Barchaning qarzi 0).")
+        return
+        
+    text = "🏪 **Qarzi bor do'konlar ro'yxati:**\n\n"
     for s in shops:
         text += f"🔹 {s['name']} ({s['region']}) — **{s['debt']:,.0f} so'm**\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+
+# 2-TUGMA: FAQAT YETKAZILMAGAN BUYURTMALAR RO'YXATI
+@bot.message_handler(func=lambda message: message.text == "📋 Status (Yetkazilmaganlar)")
+def view_undelivered_orders_only(message):
+    conn = get_db_connection()
+    orders = conn.execute("SELECT id, shop_name, total_sum, status, date FROM orders WHERE status != 'Yetkazildi' ORDER BY id DESC").fetchall()
+    conn.close()
+    
+    if not orders:
+        bot.send_message(message.chat.id, "✅ Hozirda yetkazilmagan ochiq buyurtmalar yo'q.")
+        return
         
-    text += "\n📦 **So'nggi buyurtmalar statusi:**\n"
+    text = "📋 **Hali yetkazilmagan buyurtmalar (Statuslar):**\n\n"
     for o in orders:
-        text += f"🆔 #{o['id']} | {o['shop_name']} | Status: **{o['status']}** | {o['total_sum']:,.0f} so'm\n"
-        
+        text += f"🆔 **#{o['id']}** | 🏪 {o['shop_name']}\nStatus: **{o['status']}** | Summa: {o['total_sum']:,.0f} so'm\nSana: {o['date']}\n-------------------\n"
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
@@ -1605,7 +1622,6 @@ def start_order(message):
       markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
       text = "📋 **Posesheniya bo'yicha do'konlar (Qaysi biri qolgani ko'rinib turadi):**\n\n"
       for s in shops:
-          # Tekshiramiz: bugun bu do'konga zakaz qilinganmi?
           ordered_today = conn.execute("SELECT id FROM orders WHERE shop_name = ? AND agent_name = ? AND date LIKE ?", (s['name'], agent_name, f"{datetime.now().strftime('%Y-%m-%d')}%")).fetchone()
           status_icon = "✅ Zakaz qilingan" if ordered_today else "❌ Qolgan (Zakaz qilinmagan)"
           
@@ -2832,7 +2848,6 @@ def operator_dashboard():
   total_debt_res = conn.execute('SELECT SUM(debt) as s FROM shops').fetchone()
   total_debt = total_debt_res['s'] if total_debt_res and total_debt_res['s'] else 0
 
-  # 3-TALAB: AGENTLARNING KATEGORIYALAR BO'YICHA FOIZLI OYLIGINI HISoblash
   agents_salary_data = []
   for u in users:
       if 'agent' in u['role']:
@@ -2843,7 +2858,6 @@ def operator_dashboard():
           for ao in agent_orders:
               for line in ao['items_text'].split('\n'):
                   if line.strip():
-                      # Masalan: "Pelmen /300 gr - 2x = 28,000 so'm"
                       try:
                           parts = line.split(' - ')
                           p_name = parts[0].strip()
