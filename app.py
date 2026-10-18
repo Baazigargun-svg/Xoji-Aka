@@ -2662,10 +2662,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                                 <td>
                                                     {% if o['status'] == 'Yangi' %}
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" 
-                                                        onclick="openEditOrderModal('{{ o['id'] }}', '{{ o['shop_name'] | e }}', {{ o['discount'] or 0 }}, '{{ o['comment'] | e }}', '{{ o['price_type'] or 'optom' }}', `{{ o['items_text'] | safe }}`)">
-                                                        <i class="bi bi-pencil"></i> Tahrir
-                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick='openEditOrderModal("{{ o['id'] }}", "{{ o['shop_name'] | e }}", {{ o['discount'] or 0 }}, "{{ o['comment'] | e }}", "{{ o['price_type'] or 'optom' }}", {{ o['items_text'] | tojson }})'> <i class="bi bi-pencil"></i> Tahrir </button>
                                                     <form action="/update_status/{{ o['id'] }}" method="POST" class="d-flex gap-1 mb-1">
                                                         <select name="status" class="form-select form-select-sm" style="font-size: 11px; width: 90px;">
                                                             <option value="Yangi" {% if o['status'] == 'Yangi' %}selected{% endif %}>Yangi</option>
