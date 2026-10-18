@@ -134,6 +134,7 @@ def init_web_db():
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
+      (66833564447, "Bobur", "+998972668242", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
@@ -333,8 +334,6 @@ def get_main_menu(role):
         types.KeyboardButton("🏪 AKB (Do'konlar & Qarz)"),
     )
   elif role == 'agent':
-    # 3-talab bo'yicha: Do'kon qo'shish tugmasi olib tashlandi va Web App tugmasi qo'shildi
-    webapp_url = request_host_url_dynamic() if 'request_host_url_dynamic' in globals() else "https://xoji-aka-factory.onrender.com"
     markup.row(
         types.KeyboardButton('🛒 Yangi Buyurtma Urish'),
         types.KeyboardButton('📊 Oylik hisobim'),
@@ -429,7 +428,6 @@ def start_command(message):
     )
 
 
-# --- 2-TALAB: AGENT OYLIK HISOBOTI BOTDA ---
 @bot.message_handler(func=lambda message: message.text == "📊 Oylik hisobim")
 def agent_salary_report_bot(message):
     tg_id = message.from_user.id
@@ -475,7 +473,6 @@ def agent_salary_report_bot(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
-# --- DO'KONLAR QARZI VA STATUS ---
 @bot.message_handler(func=lambda message: message.text == "📊 Do'konlar qarzi")
 def view_shops_debt_only(message):
     conn = get_db_connection()
@@ -508,7 +505,6 @@ def view_undelivered_orders_only(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
-# --- EKSPEDITOR TO'LOV YOZISH (ADMIN TASDIG'I BILAN) ---
 @bot.message_handler(func=lambda message: message.text == "💰 Qarz/To'lov yozish (Ekspeditor)")
 def ekspeditor_pay_debt_start(message):
   conn = get_db_connection()
@@ -1639,7 +1635,108 @@ def update_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# --- 4-TALAB & 5-TALAB: AGENT UCHUN MINI APP / WEB APP SAHIFASI ---
+AGENT_WEBAPP_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Kabineti — {{ agent_name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body { background: #f8fafc; font-family: 'Inter', sans-serif; padding-bottom: 40px; }
+        .mobile-container { max-width: 600px; margin: auto; padding: 15px; }
+        .card-mobile { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body>
+<div class="mobile-container">
+    <div class="d-flex justify-content-between align-items-center mb-3 bg-primary text-white p-3 rounded-4 shadow-sm">
+        <div>
+            <h5 class="fw-bold mb-0">👤 {{ agent_name }}</h5>
+            <small>Hudud: <b>{{ agent_territory or 'Barchasi' }}</b></small>
+        </div>
+        <a href="https://t.me/" class="btn btn-sm btn-light text-primary fw-bold">Botga qaytish</a>
+    </div>
+
+    <div class="card-mobile">
+        <h6 class="fw-bold text-primary mb-3"><i class="bi bi-cart-plus me-1"></i>Yangi Buyurtma Kiritish</h6>
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Do'konni tanlang:</label>
+                <select name="shop_name" class="form-select" required>
+                    <option value="">-- Do'kon tanlang --</option>
+                    {% for s in shops %}<option value="{{ s['name'] }}">{{ s['name'] }} ({{ s['region'] }})</option>{% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Narx turi:</label>
+                <select name="price_type" class="form-select">
+                    <option value="optom">Optom (Ulgurji)</option>
+                    <option value="chakana">Chakana</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Izoh:</label>
+                <input type="text" name="comment" class="form-control" placeholder="Buyurtma izohi...">
+            </div>
+            <hr>
+            <div class="mb-2 fw-bold text-secondary small">Mahsulotlar:</div>
+            <div id="mini-items">
+                <div class="row g-2 mb-2 align-items-center item-row">
+                    <div class="col-7">
+                        <select name="product_name" class="form-select form-select-sm" required>
+                            <option value="">-- Tovar --</option>
+                            {% for p in products %}<option value="{{ p['name'] }}">{{ p['name'] }} ({{ "{:,.0f}".format(p['optom_price']) }})</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <input type="number" step="any" name="qty" class="form-control form-control-sm" placeholder="Miqdor" value="1" required>
+                    </div>
+                    <div class="col-1 text-center">
+                        <button type="button" class="btn btn-sm text-danger p-0" onclick="this.closest('.item-row').remove()"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-3" onclick="addMiniRow()">+ Yana mahsulot qo'shish</button>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Buyurtmani Yuborish</button>
+        </form>
+    </div>
+
+    <div class="card-mobile">
+        <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i>Mening oxirgi buyurtmalarim</h6>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" style="font-size: 12px;">
+                <thead><tr><th>ID/Sana</th><th>Do'kon</th><th>Summa</th><th>Status</th></tr></thead>
+                <tbody>
+                    {% for o in my_orders %}
+                    <tr>
+                        <td><b>#{{ o['id'] }}</b><br><small class="text-muted">{{ o['date'] }}</small></td>
+                        <td>{{ o['shop_name'] }}</td>
+                        <td><b>{{ "{:,.0f}".format(o['total_sum']) }}</b></td>
+                        <td><span class="badge bg-secondary">{{ o['status'] }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+    function addMiniRow() {
+        let container = document.getElementById('mini-items');
+        let row = container.querySelector('.item-row').cloneNode(true);
+        row.querySelector('select').selectedIndex = 0;
+        row.querySelector('input[name="qty"]').value = '1';
+        container.appendChild(row);
+    }
+</script>
+</body>
+</html>
+"""
+
+
 @app.route('/agent_app/<int:tg_id>', methods=['GET', 'POST'])
 def agent_webapp(tg_id):
     conn = get_db_connection()
@@ -1705,7 +1802,6 @@ def agent_webapp(tg_id):
         conn.close()
         return redirect(url_for('agent_webapp', tg_id=tg_id))
 
-    # Agentga biriktirilgan masalalar bo'yicha do'konlar (territory bo'yicha filtr)
     if agent_territory:
         shops = conn.execute("SELECT * FROM shops WHERE territory = ? OR territory = '' ORDER BY name", (agent_territory,)).fetchall()
     else:
@@ -1715,120 +1811,22 @@ def agent_webapp(tg_id):
     my_orders = conn.execute("SELECT * FROM orders WHERE agent_name = ? ORDER BY id DESC LIMIT 20", (agent_name,)).fetchall()
     conn.close()
     
-    # 5-talab bo'yicha telefon uchun soddalashtirilgan, qulay mobil interfeys
-    agent_html = f"""
-    <!DOCTYPE html>
-    <html lang="uz">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Agent Kabineti — {agent_name}</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-        <style>
-            body {{ background: #f8fafc; font-family: 'Inter', sans-serif; padding-bottom: 40px; }}
-            .mobile-container {{ max-width: 600px; margin: auto; padding: 15px; }}
-            .card-mobile {{ background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }}
-        </style>
-    </head>
-    <body>
-    <div class="mobile-container">
-        <div class="d-flex justify-content-between align-items-center mb-3 bg-primary text-white p-3 rounded-4 shadow-sm">
-            <div>
-                <h5 class="fw-bold mb-0">👤 {agent_name}</h5>
-                <small>Hudud: <b>{agent_territory or 'Barchasi'}</b></small>
-            </div>
-            <a href="https://t.me/" class="btn btn-sm btn-light text-primary fw-bold">Botga qaytish</a>
-        </div>
-
-        <div class="card-mobile">
-            <h6 class="fw-bold text-primary mb-3"><i class="bi bi-cart-plus me-1"></i>Yangi Buyurtma Kiritish</h6>
-            <form method="POST">
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">Do'konni tanlang:</label>
-                    <select name="shop_name" class="form-select" required>
-                        <option value="">-- Do'kon tanlang --</option>
-                        {{% for s in shops %}}<option value="{{{{ s['name'] }}}}">{{{{ s['name'] }}}} ({{{{ s['region'] }}}})</option>{{% endfor %}}
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">Narx turi:</label>
-                    <select name="price_type" class="form-select">
-                        <option value="optom">Optom (Ulgurji)</option>
-                        <option value="chakana">Chakana</option>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-bold">Izoh:</label>
-                    <input type="text" name="comment" class="form-control" placeholder="Buyurtma izohi...">
-                </div>
-                <hr>
-                <div class="mb-2 fw-bold text-secondary small">Mahsulotlar:</div>
-                <div id="mini-items">
-                    <div class="row g-2 mb-2 align-items-center item-row">
-                        <div class="col-7">
-                            <select name="product_name" class="form-select form-select-sm" required>
-                                <option value="">-- Tovar --</option>
-                                {{% for p in products %}}<option value="{{{{ p['name'] }}}}">{{{{ p['name'] }}}} ({{{{ "{:,.0f}".format(p['optom_price']) }}}})</option>{{% endfor %}}
-                            </select>
-                        </div>
-                        <div class="col-4">
-                            <input type="number" step="any" name="qty" class="form-control form-control-sm" placeholder="Miqdor" value="1" required>
-                        </div>
-                        <div class="col-1 text-center">
-                            <button type="button" class="btn btn-sm text-danger p-0" onclick="this.closest('.item-row').remove()"><i class="bi bi-trash"></i></button>
-                        </div>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-3" onclick="addMiniRow()">+ Yana mahsulot qo'shish</button>
-                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Buyurtmani Yuborish</button>
-            </form>
-        </div>
-
-        <div class="card-mobile">
-            <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i>Mening oxirgi buyurtmalarim</h6>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle" style="font-size: 12px;">
-                    <thead><tr><th>ID/Sana</th><th>Do'kon</th><th>Summa</th><th>Status</th></tr></thead>
-                    <tbody>
-                        {{% for o in my_orders %}}
-                        <tr>
-                            <td><b>#{{{{ o['id'] }}}}</b><br><small class="text-muted">{{{{ o['date'] }}}}</small></td>
-                            <td>{{{{ o['shop_name'] }}}}</td>
-                            <td><b>{{{{ "{:,.0f}".format(o['total_sum']) }}}}</b></td>
-                            <td><span class="badge bg-secondary">{{{{ o['status'] }}}}</span></td>
-                        </tr>
-                        {{% endfor %}}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <script>
-        function addMiniRow() {{
-            let container = document.getElementById('mini-items');
-            let row = container.querySelector('.item-row').cloneNode(true);
-            row.querySelector('select').selectedIndex = 0;
-            row.querySelector('input[name="qty"]').value = '1';
-            container.appendChild(row);
-        }}
-    </script>
-    </body>
-    </html>
-    """
-    return render_template_string(agent_html, agent_name=agent_name, agent_territory=agent_territory, shops=shops, products=products, my_orders=my_orders)
+    return render_template_string(
+        AGENT_WEBAPP_TEMPLATE,
+        agent_name=agent_name,
+        agent_territory=agent_territory,
+        shops=shops,
+        products=products,
+        my_orders=my_orders
+    )
 
 
-# --- BUYURTMA BERISH (BOT) ---
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order_choice(message):
     tg_id = message.from_user.id
-    # 4-talab bo'yicha botda WebApp havolasini ham taqdim etish mumkin
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
     
-    # Web App orqali kirish tugmasi
-    webapp_url = f"https://{request.host}/agent_app/{tg_id}" if 'request' in globals() else "https://xoji-aka-factory.onrender.com/agent_app/" + str(tg_id)
     web_markup = types.InlineKeyboardMarkup()
     web_markup.add(types.InlineKeyboardButton("🌐 Web App orqali buyurtma berish (Qulay)", web_app=types.WebAppInfo(url=f"https://xoji-aka-factory.onrender.com/agent_app/{tg_id}")))
     
@@ -2463,7 +2461,6 @@ HTML_TEMPLATE = """
                                                 <td><b>#{{ o['id'] }}</b><br><small class="text-muted">{{ o['date'] }}</small></td>
                                                 <td><b>{{ o['shop_name'] }}</b><br><small class="text-muted">Agent: {{ o['agent_name'] }}</small></td>
                                                 <td>
-                                                    <!-- 1-TALAB: Tafsilot uzun bo'lib sahifani to'ldirib yubormasligi uchun yashirildi -->
                                                     <div class="fw-bold text-primary mb-1">Jami: {{ "{:,.0f}".format(o['total_sum']) }} so'm</div>
                                                     <details>
                                                         <summary class="text-secondary small" style="cursor: pointer;">Tafsilotni ko'rish</summary>
