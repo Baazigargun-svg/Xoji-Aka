@@ -1468,18 +1468,21 @@ def update_order(order_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Oldingi buyurtma miqdorlarini skladga qaytarib qo'shamiz (eski xatolikni to'g'irlash uchun)
+    # 1. Oldingi buyurtma miqdorlarini skladga qaytarib qo'shamiz
     old_order = cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    if old_order:
+    if old_order and old_order['items_text']:
         for line in old_order['items_text'].split('\n'):
             if line.strip():
                 try:
+                    # Xatolik chiqmasligi uchun to'g'rilangan qism
                     parts = line.split(' - ')
-                    p_name = parts[0].strip()
-                    qty_part = parts[1].split('x')[0].strip()
-                    old_qty = float(qty_part)
-                    cursor.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (old_qty, p_name))
-                except:
+                    if len(parts) > 1:
+                        p_name = parts[0].strip()
+                        qty_part = parts[1].split('x')[0].strip().replace(',', '.')
+                        old_qty = float(qty_part)
+                        cursor.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (old_qty, p_name))
+                except Exception as e:
+                    print("Eski qoldiqni qaytarishda xato:", e)
                     pass
 
     # 2. Yangi mahsulotlar ro'yxatini yig'amiz
