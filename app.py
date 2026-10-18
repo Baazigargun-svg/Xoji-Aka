@@ -84,10 +84,6 @@ def init_web_db():
       '''CREATE TABLE IF NOT EXISTS shops 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, firm TEXT DEFAULT '', name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '', territory TEXT DEFAULT '')'''
   )
-  cursor.execute(
-      '''CREATE TABLE IF NOT EXISTS payment_requests 
-                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT, date TEXT)'''
-  )
 
   migrations = [
       (
@@ -134,6 +130,7 @@ def init_web_db():
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
+      (66833564447, "Bobur", "+998972668242", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
@@ -142,7 +139,8 @@ def init_web_db():
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
     )
-initial_shops = [
+
+  initial_shops = [
       ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
       ('', 'Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
       ('', 'Qayumov Kamol', '', 'Termiz shahar', 'Murch boboga yetmasdan'),
@@ -266,6 +264,7 @@ initial_shops = [
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
     )
+
   conn.commit()
   conn.close()
 
