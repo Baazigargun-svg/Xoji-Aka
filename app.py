@@ -2672,6 +2672,7 @@ HTML_TEMPLATE = """
                                                         </select>
                                                         <button type="submit" class="btn btn-sm btn-success px-2"><i class="bi bi-check"></i></button>
                                                     </form>
+                                                    {% endif %}
                                                     <a href="/print_nakladnoy/{{ o['id'] }}" target="_blank" class="btn btn-sm btn-outline-dark py-0 w-100" style="font-size: 11px;"><i class="bi bi-printer me-1"></i>Nakladnoy</a>
                                                 </td>
                                             </tr>
@@ -3634,7 +3635,7 @@ def add_expense():
 @app.route('/add_advance', methods=['POST'])
 def add_advance():
   worker_name = request.form['worker_name']
-  amount = float(request.form['amount'])
+  amount = float(request.form.get('amount', 0))
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute('INSERT INTO advances (worker_name, amount, date) VALUES (?, ?, ?)', (worker_name, amount, today))
