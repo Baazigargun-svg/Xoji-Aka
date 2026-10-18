@@ -130,7 +130,6 @@ def init_web_db():
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
-      (66833564447, "Bobur", "+998972668242", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
@@ -216,6 +215,7 @@ def init_web_db():
       ('', 'Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
       ('', '878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
       ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
+      ('', 'Nazarova Nodira', '', 'Termiz shahar', 'SOHIL MED TEXNIKUM TOʻGʻRISI'),
   ]
   for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
     cursor.execute(
