@@ -84,6 +84,10 @@ def init_web_db():
       '''CREATE TABLE IF NOT EXISTS shops 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, firm TEXT DEFAULT '', name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '', territory TEXT DEFAULT '')'''
   )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS payment_requests 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT, date TEXT)'''
+  )
 
   migrations = [
       (
@@ -130,7 +134,6 @@ def init_web_db():
       (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
-      (66833564447, "Bobur", "+998972668242", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
   ]
   for ag_id, ag_name, ag_phone, ag_role in initial_agents:
@@ -138,131 +141,6 @@ def init_web_db():
         "INSERT OR IGNORE INTO users (tg_id, name, phone, role) VALUES (?, ?,"
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
-    )
-
-  initial_shops = [
-      ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
-      ('', 'Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
-      ('', 'Qayumov Kamol', '', 'Termiz shahar', 'Murch boboga yetmasdan'),
-      ('', 'Akbar aka', '', 'Termiz shahar', 'Bekat murch bobo'),
-      ('', 'Pub house', '', 'Termiz shahar', 'Pub house'),
-      ('', 'Chapayev roparasi', '', 'Termiz shahar', 'Chapayev roparasi'),
-      ('', 'Toshpoʻlat aka', '', 'Termiz shahar', 'Uchrashuv yoni'),
-      ('', 'Abdulfayz bekat', '', 'Termiz shahar', ''),
-      ('', 'Dilorom', '', 'Termiz shahar', 'Tutzor'),
-      ('', 'Joʻrabek aka', '', 'Termiz shahar', 'Anorcha tagi'),
-      ('', 'Vohas', '', 'Termiz shahar', 'Vohas'),
-      ('', 'Oʻzbegim market', '', 'Termiz shahar', 'Davr bank yoni'),
-      ('', 'Pokiza market', '', 'Termiz shahar', 'Muz saroy yoni'),
-      ('', 'Soxibkor doʻstlik', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Feruza non sex', '', 'Termiz shahar', 'Nigoh non sexi yoni'),
-      ('', 'South brothers', '', 'Termiz shahar', 'Doktor A qatori'),
-      ('', 'Gulmira opa', '', 'Termiz shahar', 'Cola orqasi'),
-      ('', 'Taniqulov Oʻktam', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Abdulloh market', '', 'Termiz shahar', 'Feredun café'),
-      ('', '23-market', '', 'Termiz shahar', '23-sartarosh yoni'),
-      ('', 'Oral Cola market', '', 'Termiz shahar', 'South brothersga yetmay'),
-      ('', 'Muxlis Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Anjir Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Sevimli Market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Abbos market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Dilya opa', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Sanjar aka', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Nur market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', '547 market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Shox market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Makro market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Xusan bobo market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Fresh market umid aka', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli'),
-      ('', 'Hoji ona market', '', 'Termiz shahar', 'Med yoni'),
-      ('', 'Chinor market', '', 'Termiz shahar', 'Med yoni'),
-      ('', '16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
-      ('', 'Lada yoni', '', 'Termiz shahar', 'Lada yoni'),
-      ('', 'Alibek aka', '', 'Termiz shahar', 'Sohil pastlik'),
-      ('', '4 aka-uka', '', 'Termiz shahar', 'sohil'),
-      ('', 'Rayxon opa sohil', '', 'Termiz shahar', 'Guliston ma-si'),
-      ('', 'Muhabbat opa', '', 'Termiz shahar', 'Boyqishloq'),
-      ('', 'Moyka yoni', '', 'Termiz shahar', 'Moyka yoni'),
-      ('', 'Malika yoni optom', '', 'Termiz shahar', 'Malika yoni optom'),
-      ('', 'AR market', '', 'Termiz shahar', 'Abdurashid market'),
-      ('', 'Kam-kam Market', '', 'Termiz shahar', '23-dom yoni'),
-      ('', 'Osiyo tagi', '', 'Termiz shahar', ''),
-      ('', '24/7 Market', '', 'Termiz shahar', ''),
-      ('', 'Nigora opa', '', 'Termiz shahar', 'Eski pioner oldi'),
-      ('', 'Sherbek aka/fresh M', '', 'Termiz shahar', 'Best roʻparasi'),
-      ('', 'Otabek aka', '', 'Termiz shahar', 'antena tagi'),
-      ('', 'Universal Market', '', 'Termiz shahar', 'Lola kafe yoni'),
-      ('', 'Aka-Uka Market', '', 'Termiz shahar', 'Masjid yoni'),
-      ('', 'Oila Market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Boxo market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Otabek zapchast M', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Maya market', '', 'Termiz shahar', 'Gostsatndart yoni'),
-      ('', 'Umida opa', '', 'Termiz shahar', 'Mashhura yoʻli'),
-      ('', 'Darband city', '', 'Termiz shahar', 'Vokzal yoni'),
-      ('', 'Otajon market', '', 'Termiz shahar', 'Tisudan keyin'),
-      ('', 'Barakali market', '', 'Termiz shahar', 'Tisu yoni'),
-      ('', 'Asilabonu', '', 'Termiz shahar', 'Boysun bekati yoni'),
-      ('', 'Norqulova Nargiza', '', 'Termiz shahar', 'Hayit ala uyi taraf'),
-      ('', 'Sherzod aka', '', 'Termiz shahar', 'Harbiy doʻkon'),
-      ('', 'Bahor Market', '', 'Termiz tuman', ''),
-      ('', 'Baraka Market', '', 'Termiz tuman', ''),
-      ('', 'Farxod Market', '', 'Senter Kamaz', ''),
-      ('', 'Ariqcha Market', '', 'Senter Kamaz', ''),
-      ('', 'Xolida Market', '', 'Limon', ''),
-      ('', '7Я Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Jahon Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
-      ('', 'Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
-      ('', '878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
-      ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
-  ]
-  for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
-    cursor.execute(
-        """INSERT OR IGNORE INTO shops (firm, name, phone, debt, region, landmark, territory) 
-             VALUES (?, ?, ?, 0, ?, ?, '')""",
-        (s_firm, s_name, s_phone, s_region, s_landmark),
-    )
-
-  initial_products = [
-      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0, 5),
-      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0, 5),
-      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0, 5),
-      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0, 5),
-      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0, 5),
-      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0, 5),
-      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0, 5),
-      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0, 5),
-      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0, 5),
-      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0, 5),
-      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0, 5),
-      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0, 5),
-      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0, 5),
-      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0, 3),
-      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0, 3),
-      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0, 3),
-      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0, 3),
-      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
-  ]
-  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
-    cursor.execute(
-        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price, agent_percent) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
     )
 
   conn.commit()
@@ -455,9 +333,11 @@ def get_main_menu(role):
         types.KeyboardButton("🏪 AKB (Do'konlar & Qarz)"),
     )
   elif role == 'agent':
+    # 3-talab bo'yicha: Do'kon qo'shish tugmasi olib tashlandi va Web App tugmasi qo'shildi
+    webapp_url = request_host_url_dynamic() if 'request_host_url_dynamic' in globals() else "https://xoji-aka-factory.onrender.com"
     markup.row(
         types.KeyboardButton('🛒 Yangi Buyurtma Urish'),
-        types.KeyboardButton("🏪 Do'kon qo'shish (AKB)"),
+        types.KeyboardButton('📊 Oylik hisobim'),
     )
     markup.row(
         types.KeyboardButton('📜 Mening Buyurtmalarim'),
@@ -547,6 +427,52 @@ def start_command(message):
         " ro'yxatdan o'ting.",
         reply_markup=get_main_menu('guest'),
     )
+
+
+# --- 2-TALAB: AGENT OYLIK HISOBOTI BOTDA ---
+@bot.message_handler(func=lambda message: message.text == "📊 Oylik hisobim")
+def agent_salary_report_bot(message):
+    tg_id = message.from_user.id
+    conn = get_db_connection()
+    user = conn.execute("SELECT name FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+    if not user:
+        conn.close()
+        bot.send_message(message.chat.id, "Foydalanuvchi topilmadi.")
+        return
+    agent_name = user['name']
+    
+    agent_orders = conn.execute("SELECT items_text, total_sum FROM orders WHERE agent_name = ? AND status != 'Bekor'", (agent_name,)).fetchall()
+    calculated_salary = 0
+    for ao in agent_orders:
+        for line in ao['items_text'].split('\n'):
+            if line.strip():
+                try:
+                    parts = line.split(' - ')
+                    p_name = parts[0].strip()
+                    qty_part = parts[1].split('x')[0].strip()
+                    qty = float(qty_part)
+                    prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
+                    if prod_info:
+                        p_price = prod_info['optom_price'] or 0
+                        p_perc = prod_info['agent_percent'] or 5
+                        item_total = p_price * qty
+                        calculated_salary += (item_total * p_perc / 100)
+                except:
+                    pass
+    
+    adv_res = conn.execute("SELECT SUM(amount) as s FROM advances WHERE worker_name = ?", (agent_name,)).fetchone()
+    total_adv = adv_res['s'] if adv_res and adv_res['s'] else 0
+    final_salary = calculated_salary - total_adv
+    conn.close()
+    
+    text = (
+        f"📊 **Sizning oylik hisobotingiz:**\n\n"
+        f"👤 Agent: {agent_name}\n"
+        f"💰 Hisoblangan foiz oylik: **{calculated_salary:,.0f} so'm**\n"
+        f"📤 Olingan avanslar: **{total_adv:,.0f} so'm**\n"
+        f"💵 **Yakuniy oylik (Qoldiq): {final_salary:,.0f} so'm**"
+    )
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 
 # --- DO'KONLAR QARZI VA STATUS ---
@@ -1713,13 +1639,202 @@ def update_agent(tg_id):
   return redirect(url_for('operator_dashboard'))
 
 
-# --- BUYURTMA BERISH ---
+# --- 4-TALAB & 5-TALAB: AGENT UCHUN MINI APP / WEB APP SAHIFASI ---
+@app.route('/agent_app/<int:tg_id>', methods=['GET', 'POST'])
+def agent_webapp(tg_id):
+    conn = get_db_connection()
+    user = conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+    if not user:
+        conn.close()
+        return "Foydalanuvchi topilmadi yoki ro'yxatdan o'tmagan.", 403
+    
+    agent_name = user['name']
+    agent_territory = user['territory'] or ''
+    
+    if request.method == 'POST':
+        shop_name = request.form.get('shop_name')
+        price_type = request.form.get('price_type', 'optom')
+        comment = request.form.get('comment', '')
+        product_names = request.form.getlist('product_name')
+        qtys = request.form.getlist('qty')
+        
+        total_sum = 0
+        items_text = ''
+        excel_cart_items = []
+        
+        for i in range(len(product_names)):
+            p_name = product_names[i]
+            if not p_name: continue
+            try:
+                qty = float(qtys[i])
+            except:
+                qty = 1
+                
+            prod = conn.execute('SELECT optom_price, chakana_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+            if prod:
+                price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
+                stock_p = prod['stock'] or 0
+                summa = price * qty
+                total_sum += summa
+                items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
+                conn.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+                excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
+                
+        bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment) VALUES (?, ?, ?, ?, "Yangi", ?, ?, 0, ?)',
+            (shop_name, agent_name, total_sum, items_text, bugun, price_type, comment),
+        )
+        order_id = cursor.lastrowid
+        conn.commit()
+        
+        try:
+            group_text = (
+                f'📝 <b>YANGI MINI APP BUYURTMA (#{order_id})</b>\n'
+                f"🏪 <b>Do'kon:</b> {shop_name}\n"
+                f'👤 <b>Agent:</b> {agent_name}\n'
+                f'💬 <b>Izoh:</b> {comment}\n'
+                f'💰 <b>Jami summa:</b> {total_sum:,.0f} so\'m\n\n'
+                f'<b>Mahsulotlar:</b>\n{items_text}'
+            )
+            bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
+        except Exception as e:
+            print('Mini App buyurtmani guruhga yuborish xatosi:', e)
+            
+        conn.close()
+        return redirect(url_for('agent_webapp', tg_id=tg_id))
+
+    # Agentga biriktirilgan masalalar bo'yicha do'konlar (territory bo'yicha filtr)
+    if agent_territory:
+        shops = conn.execute("SELECT * FROM shops WHERE territory = ? OR territory = '' ORDER BY name", (agent_territory,)).fetchall()
+    else:
+        shops = conn.execute("SELECT * FROM shops ORDER BY name").fetchall()
+        
+    products = conn.execute("SELECT * FROM products ORDER BY name").fetchall()
+    my_orders = conn.execute("SELECT * FROM orders WHERE agent_name = ? ORDER BY id DESC LIMIT 20", (agent_name,)).fetchall()
+    conn.close()
+    
+    # 5-talab bo'yicha telefon uchun soddalashtirilgan, qulay mobil interfeys
+    agent_html = f"""
+    <!DOCTYPE html>
+    <html lang="uz">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Agent Kabineti — {agent_name}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+        <style>
+            body {{ background: #f8fafc; font-family: 'Inter', sans-serif; padding-bottom: 40px; }}
+            .mobile-container {{ max-width: 600px; margin: auto; padding: 15px; }}
+            .card-mobile {{ background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }}
+        </style>
+    </head>
+    <body>
+    <div class="mobile-container">
+        <div class="d-flex justify-content-between align-items-center mb-3 bg-primary text-white p-3 rounded-4 shadow-sm">
+            <div>
+                <h5 class="fw-bold mb-0">👤 {agent_name}</h5>
+                <small>Hudud: <b>{agent_territory or 'Barchasi'}</b></small>
+            </div>
+            <a href="https://t.me/" class="btn btn-sm btn-light text-primary fw-bold">Botga qaytish</a>
+        </div>
+
+        <div class="card-mobile">
+            <h6 class="fw-bold text-primary mb-3"><i class="bi bi-cart-plus me-1"></i>Yangi Buyurtma Kiritish</h6>
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Do'konni tanlang:</label>
+                    <select name="shop_name" class="form-select" required>
+                        <option value="">-- Do'kon tanlang --</option>
+                        {{% for s in shops %}}<option value="{{{{ s['name'] }}}}">{{{{ s['name'] }}}} ({{{{ s['region'] }}}})</option>{{% endfor %}}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Narx turi:</label>
+                    <select name="price_type" class="form-select">
+                        <option value="optom">Optom (Ulgurji)</option>
+                        <option value="chakana">Chakana</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Izoh:</label>
+                    <input type="text" name="comment" class="form-control" placeholder="Buyurtma izohi...">
+                </div>
+                <hr>
+                <div class="mb-2 fw-bold text-secondary small">Mahsulotlar:</div>
+                <div id="mini-items">
+                    <div class="row g-2 mb-2 align-items-center item-row">
+                        <div class="col-7">
+                            <select name="product_name" class="form-select form-select-sm" required>
+                                <option value="">-- Tovar --</option>
+                                {{% for p in products %}}<option value="{{{{ p['name'] }}}}">{{{{ p['name'] }}}} ({{{{ "{:,.0f}".format(p['optom_price']) }}}})</option>{{% endfor %}}
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <input type="number" step="any" name="qty" class="form-control form-control-sm" placeholder="Miqdor" value="1" required>
+                        </div>
+                        <div class="col-1 text-center">
+                            <button type="button" class="btn btn-sm text-danger p-0" onclick="this.closest('.item-row').remove()"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-3" onclick="addMiniRow()">+ Yana mahsulot qo'shish</button>
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Buyurtmani Yuborish</button>
+            </form>
+        </div>
+
+        <div class="card-mobile">
+            <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i>Mening oxirgi buyurtmalarim</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle" style="font-size: 12px;">
+                    <thead><tr><th>ID/Sana</th><th>Do'kon</th><th>Summa</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {{% for o in my_orders %}}
+                        <tr>
+                            <td><b>#{{{{ o['id'] }}}}</b><br><small class="text-muted">{{{{ o['date'] }}}}</small></td>
+                            <td>{{{{ o['shop_name'] }}}}</td>
+                            <td><b>{{{{ "{:,.0f}".format(o['total_sum']) }}}}</b></td>
+                            <td><span class="badge bg-secondary">{{{{ o['status'] }}}}</span></td>
+                        </tr>
+                        {{% endfor %}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        function addMiniRow() {{
+            let container = document.getElementById('mini-items');
+            let row = container.querySelector('.item-row').cloneNode(true);
+            row.querySelector('select').selectedIndex = 0;
+            row.querySelector('input[name="qty"]').value = '1';
+            container.appendChild(row);
+        }}
+    </script>
+    </body>
+    </html>
+    """
+    return render_template_string(agent_html, agent_name=agent_name, agent_territory=agent_territory, shops=shops, products=products, my_orders=my_orders)
+
+
+# --- BUYURTMA BERISH (BOT) ---
 @bot.message_handler(func=lambda message: message.text == '🛒 Yangi Buyurtma Urish')
 def start_order_choice(message):
+    tg_id = message.from_user.id
+    # 4-talab bo'yicha botda WebApp havolasini ham taqdim etish mumkin
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
+    
+    # Web App orqali kirish tugmasi
+    webapp_url = f"https://{request.host}/agent_app/{tg_id}" if 'request' in globals() else "https://xoji-aka-factory.onrender.com/agent_app/" + str(tg_id)
+    web_markup = types.InlineKeyboardMarkup()
+    web_markup.add(types.InlineKeyboardButton("🌐 Web App orqali buyurtma berish (Qulay)", web_app=types.WebAppInfo(url=f"https://xoji-aka-factory.onrender.com/agent_app/{tg_id}")))
+    
     markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
-    bot.send_message(message.chat.id, "Buyurtma berish turini tanlang:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Buyurtma berish turini tanlang (yoki quyidagi Mini App orqali o'ting):", reply_markup=markup)
+    bot.send_message(message.chat.id, "📱 **Telefon uchun veb ilova (Mini App):**", reply_markup=web_markup, parse_mode="Markdown")
 
 
 @bot.message_handler(func=lambda message: message.text in ['📅 Posesheniya (Tashrif kunlari)', '🌐 Obshiy zakaz (Barcha do\'konlar)'])
@@ -2336,7 +2451,7 @@ HTML_TEMPLATE = """
                                                 <th style="width: 30px;"><input type="checkbox" id="selectAllOrders" onclick="toggleSelectAllOrders(this)"></th>
                                                 <th>ID / Vaqt</th>
                                                 <th>Do'kon</th>
-                                                <th>Tafsilot & Izoh</th>
+                                                <th>Summa & Tafsilot</th>
                                                 <th>Status & Tarix</th>
                                                 <th>Amallar</th>
                                             </tr>
@@ -2348,10 +2463,14 @@ HTML_TEMPLATE = """
                                                 <td><b>#{{ o['id'] }}</b><br><small class="text-muted">{{ o['date'] }}</small></td>
                                                 <td><b>{{ o['shop_name'] }}</b><br><small class="text-muted">Agent: {{ o['agent_name'] }}</small></td>
                                                 <td>
-                                                    <code style="font-size: 11px; white-space: pre-line;" class="text-dark d-block">{{ o['items_text'] }}</code>
-                                                    {% if o['comment'] %}<small class="text-primary fw-bold d-block mt-1"><i class="bi bi-chat-left-text me-1"></i>Izoh: {{ o['comment'] }}</small>{% endif %}
+                                                    <!-- 1-TALAB: Tafsilot uzun bo'lib sahifani to'ldirib yubormasligi uchun yashirildi -->
+                                                    <div class="fw-bold text-primary mb-1">Jami: {{ "{:,.0f}".format(o['total_sum']) }} so'm</div>
+                                                    <details>
+                                                        <summary class="text-secondary small" style="cursor: pointer;">Tafsilotni ko'rish</summary>
+                                                        <code style="font-size: 11px; white-space: pre-line;" class="text-dark d-block mt-1 bg-light p-1 rounded">{{ o['items_text'] }}</code>
+                                                    </details>
+                                                    {% if o['comment'] %}<small class="text-info fw-bold d-block mt-1"><i class="bi bi-chat-left-text me-1"></i>Izoh: {{ o['comment'] }}</small>{% endif %}
                                                     {% if o['discount'] and o['discount'] > 0 %}<small class="text-danger">Skidka: -{{ "{:,.0f}".format(o['discount']) }} so'm</small><br>{% endif %}
-                                                    <div class="fw-bold text-primary mt-1">Jami: {{ "{:,.0f}".format(o['total_sum']) }} so'm</div>
                                                 </td>
                                                 <td>
                                                     <span class="badge {% if o['status'] == 'Bekor' %}bg-danger{% elif o['status'] == 'Yetkazildi' %}bg-success{% else %}bg-secondary{% endif %} mb-1">{{ o['status'] }}</span>
@@ -2864,7 +2983,7 @@ HTML_TEMPLATE = """
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static']
+    allowed_routes = ['login', 'static', 'agent_webapp']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
