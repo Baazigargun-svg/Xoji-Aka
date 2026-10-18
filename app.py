@@ -1455,18 +1455,63 @@ def add_shop():
     pass
   conn.close()
   return redirect(url_for('operator_dashboard'))
-
 @app.route('/update_order/<int:order_id>', methods=['POST'])
 def update_order(order_id):
     shop_name = request.form.get('shop_name')
     comment = request.form.get('comment', '')
     discount = float(request.form.get('discount', 0))
+    price_type = request.form.get('price_type', 'optom')
+    
+    product_names = request.form.getlist('product_name')
+    qtys = request.form.getlist('qty')
     
     conn = get_db_connection()
-    # Eskisini olib umumiy summani yoki izohni yangilash
-    conn.execute(
-        'UPDATE orders SET shop_name = ?, comment = ?, discount = ? WHERE id = ?',
-        (shop_name, comment, discount, order_id)
+    cursor = conn.cursor()
+    
+    # 1. Oldingi buyurtma miqdorlarini skladga qaytarib qo'shamiz (eski xatolikni to'g'irlash uchun)
+    old_order = cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if old_order:
+        for line in old_order['items_text'].split('\n'):
+            if line.strip():
+                try:
+                    parts = line.split(' - ')
+                    p_name = parts[0].strip()
+                    qty_part = parts[1].split('x')[0].strip()
+                    old_qty = float(qty_part)
+                    cursor.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (old_qty, p_name))
+                except:
+                    pass
+
+    # 2. Yangi mahsulotlar ro'yxatini yig'amiz
+    total_sum = 0
+    items_text = ''
+    
+    for i in range(len(product_names)):
+        p_name = product_names[i]
+        if not p_name: 
+            continue
+        try:
+            qty = float(qtys[i])
+        except:
+            qty = 1
+            
+        prod = cursor.execute('SELECT optom_price, chakana_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+        if prod:
+            price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
+            stock_p = prod['stock'] or 0
+            summa = price * qty
+            total_sum += summa
+            items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
+            
+            # Skladni yangilash (ayirish)
+            cursor.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+
+    final_sum = total_sum - discount
+
+    # 3. Buyurtmani bazada yangilash
+    cursor.execute(
+        'UPDATE orders SET shop_name = ?, total_sum = ?, items_text = ?, price_type = ?, discount = ?, comment = ? WHERE id = ?',
+        (shop_name, final_sum, items_text, price_type, discount, comment, order_id)
     )
     conn.commit()
     conn.close()
@@ -2617,11 +2662,10 @@ HTML_TEMPLATE = """
                                                 </td>
                                                 <td>
                                                     {% if o['status'] == 'Yangi' %}
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick="openEditOrderModal('{{ o['id'] }}', '{{ o['shop_name'] | e }}', {{ o['discount'] }}, '{{ o['comment'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
-                                                    {% else %}
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 mb-1 w-100" style="font-size: 11px;" disabled title="Faqat Yangi holatdagi buyurtmani tahrirlash mumkin"><i class="bi bi-lock"></i> Tahrir yo'q</button>
-                                                    {% endif %}
-
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" 
+                                                        onclick="openEditOrderModal('{{ o['id'] }}', '{{ o['shop_name'] | e }}', {{ o['discount'] or 0 }}, '{{ o['comment'] | e }}', '{{ o['price_type'] or 'optom' }}', `{{ o['items_text'] | safe }}`)">
+                                                        <i class="bi bi-pencil"></i> Tahrir
+                                                    </button>
                                                     <form action="/update_status/{{ o['id'] }}" method="POST" class="d-flex gap-1 mb-1">
                                                         <select name="status" class="form-select form-select-sm" style="font-size: 11px; width: 90px;">
                                                             <option value="Yangi" {% if o['status'] == 'Yangi' %}selected{% endif %}>Yangi</option>
@@ -3015,26 +3059,41 @@ HTML_TEMPLATE = """
     </div>
 </div>
 <div class="modal fade" id="editOrderModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <form id="editOrderForm" method="POST">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Buyurtmani Tahrirlash</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square text-primary me-2"></i>Buyurtma ichini tahrirlash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Do'kon nomi:</label>
-                        <input type="text" name="shop_name" id="edit_order_shop" class="form-control" required>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Do'kon nomi:</label>
+                            <input type="text" name="shop_name" id="edit_order_shop" class="form-control" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">Narx turi:</label>
+                            <select name="price_type" id="edit_order_price_type" class="form-select">
+                                <option value="optom">Optom</option>
+                                <option value="chakana">Chakana</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">Skidka (so'm):</label>
+                            <input type="number" step="any" name="discount" id="edit_order_discount" class="form-control" value="0">
+                        </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small fw-bold">Skidka (Chegirma so'mda):</label>
-                        <input type="number" step="any" name="discount" id="edit_order_discount" class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Izoh (Kommentariya):</label>
+                        <label class="form-label small fw-bold">Izoh:</label>
                         <input type="text" name="comment" id="edit_order_comment" class="form-control">
                     </div>
+                    <hr>
+                    <label class="form-label small fw-bold text-secondary mb-2">Mahsulotlar ro'yxati:</label>
+                    <div id="edit-modal-items-container">
+                        <!-- Dinamik qatorlar shu yerga tushadi -->
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="addEditModalRow()">+ Yana mahsulot qo'shish</button>
                 </div>
                 <div class="modal-footer"><button type="submit" class="btn btn-primary btn-sm">O'zgarishlarni Saqlash</button></div>
             </form>
@@ -3044,12 +3103,69 @@ HTML_TEMPLATE = """
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    function openEditOrderModal(id, shopName, discount, comment) {
+    // Barcha mahsulotlar ro'yxatini saqlab turish uchun global massiv
+let allProductsList = [
+    {% for p in products %}
+    {name: "{{ p['name'] | e }}", price: "{{ p['optom_price'] }}"},
+    {% endfor %}
+];
+
+function openEditOrderModal(id, shopName, discount, comment, priceType, itemsText) {
     document.getElementById('editOrderForm').action = '/update_order/' + id;
     document.getElementById('edit_order_shop').value = shopName;
     document.getElementById('edit_order_discount').value = discount;
     document.getElementById('edit_order_comment').value = comment;
+    document.getElementById('edit_order_price_type').value = priceType || 'optom';
+
+    let container = document.getElementById('edit-modal-items-container');
+    container.innerHTML = '';
+
+    let lines = itemsText.split('\n');
+    let hasItems = false;
+
+    lines.forEach(line => {
+        if (line.trim()) {
+            hasItems = true;
+            let parts = line.split(' - ');
+            let pName = parts[0].trim();
+            let qtyPart = parts[1] ? parts[1].split('x')[0].trim() : '1';
+            
+            addEditModalRow(pName, qtyPart);
+        }
+    });
+
+    if (!hasItems) {
+        addEditModalRow('', '1');
+    }
+
     new bootstrap.Modal(document.getElementById('editOrderModal')).show();
+}
+
+function addEditModalRow(selectedProd = '', qtyVal = '1') {
+    let container = document.getElementById('edit-modal-items-container');
+    let row = document.createElement('div');
+    row.className = 'row g-2 mb-2 align-items-center edit-item-row';
+    
+    let optionsHtml = '<option value="">-- Tovar tanlang --</option>';
+    allProductsList.forEach(p => {
+        let sel = (p.name === selectedProd) ? 'selected' : '';
+        optionsHtml += `<option value="${p.name}" ${sel}>${p.name}</option>`;
+    });
+
+    row.innerHTML = `
+        <div class="col-7">
+            <select name="product_name" class="form-select form-select-sm" required>
+                ${optionsHtml}
+            </select>
+        </div>
+        <div class="col-4">
+            <input type="number" step="any" name="qty" class="form-control form-control-sm" value="${qtyVal}" placeholder="Miqdor" required>
+        </div>
+        <div class="col-1 text-center">
+            <button type="button" class="btn btn-sm text-danger p-0" onclick="this.closest('.edit-item-row').remove()"><i class="bi bi-trash"></i></button>
+        </div>
+    `;
+    container.appendChild(row);
 }
     function toggleNewProd() {
         let sel = document.getElementById('p_sel');
