@@ -142,12 +142,6 @@ def init_web_db():
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
     )
-  for ag_id, ag_name, ag_phone, ag_role in initial_agents:
-    cursor.execute(
-        "INSERT OR IGNORE INTO users (tg_id, name, phone, role) VALUES (?, ?,"
-        " ?, ?)",
-        (ag_id, ag_name, ag_phone, ag_role),
-    )
 
   initial_shops = [
       ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
@@ -3184,7 +3178,13 @@ function openEditOrderModal(id, shopName, discount, comment, priceType, itemsTex
             hasItems = true;
             let parts = line.split(' - ');
             let pName = parts[0].trim();
-            let qtyPart = parts[1] ? parts[1].split('x')[0].strip().replace(',', '.') : '1';
+            let qtyPart = '1';
+            if (parts[1]) {
+                let subParts = parts[1].split('x');
+                if (subParts[0]) {
+                    qtyPart = subParts[0].trim().replace(',', '.');
+                }
+            }
             
             addEditModalRow(pName, qtyPart);
         }
