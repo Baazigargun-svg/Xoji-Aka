@@ -242,6 +242,7 @@ def init_web_db():
       ('', 'ALLAMURODOVA IQBOL', '', 'Termiz shahar', 'TURON MAHALLADAN KIRGANDA 100 METR TOGRIGA'),
       ('', 'Crafers bekat', '', 'Termiz shahar', 'eski pioner roparasi'),
       ('', 'Botir sinfdosh', '', 'Termiz shahar', 'eski pioner roparasi'),
+      ('', 'Aznaf market', '', 'Termiz shahar', 'avtosalon roparasi'),
   ]
   for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
     cursor.execute(
