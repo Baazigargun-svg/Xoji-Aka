@@ -84,6 +84,10 @@ def init_web_db():
       '''CREATE TABLE IF NOT EXISTS shops 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, firm TEXT DEFAULT '', name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '', territory TEXT DEFAULT '')'''
   )
+  cursor.execute(
+      '''CREATE TABLE IF NOT EXISTS payment_requests 
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT DEFAULT 'pending', date TEXT)'''
+  )
 
   migrations = [
       (
@@ -137,153 +141,6 @@ def init_web_db():
         "INSERT OR IGNORE INTO users (tg_id, name, phone, role) VALUES (?, ?,"
         " ?, ?)",
         (ag_id, ag_name, ag_phone, ag_role),
-    )
-
-  initial_shops = [
-      ('', 'Vanselling', '', 'Termiz shahar', 'SEX Gulim'),
-      ('', 'Sherzod market', '', 'Termiz shahar', 'Uzgazoil qatori'),
-      ('', 'Qayumov Kamol', '', 'Termiz shahar', 'Murch boboga yetmasdan'),
-      ('', 'Akbar aka', '', 'Termiz shahar', 'Bekat murch bobo'),
-      ('', 'Pub house', '', 'Termiz shahar', 'Pub house'),
-      ('', 'Chapayev roparasi', '', 'Termiz shahar', 'Chapayev roparasi'),
-      ('', 'Toshpoʻlat aka', '', 'Termiz shahar', 'Uchrashuv yoni'),
-      ('', 'Abdulfayz bekat', '', 'Termiz shahar', ''),
-      ('', 'Dilorom', '', 'Termiz shahar', 'Tutzor'),
-      ('', 'Joʻrabek aka', '', 'Termiz shahar', 'Anorcha tagi'),
-      ('', 'Vohas', '', 'Termiz shahar', 'Vohas'),
-      ('', 'Oʻzbegim market', '', 'Termiz shahar', 'Davr bank yoni'),
-      ('', 'Pokiza market', '', 'Termiz shahar', 'Muz saroy yoni'),
-      ('', 'Soxibkor doʻstlik', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Feruza non sex', '', 'Termiz shahar', 'Nigoh non sexi yoni'),
-      ('', 'South brothers', '', 'Termiz shahar', 'Doktor A qatori'),
-      ('', 'Gulmira opa', '', 'Termiz shahar', 'Cola orqasi'),
-      ('', 'Taniqulov Oʻktam', '', 'Termiz shahar', 'Hokimiyat'),
-      ('', 'Abdulloh market', '', 'Termiz shahar', 'Feredun café'),
-      ('', '23-market', '', 'Termiz shahar', '23-sartarosh yoni'),
-      ('', 'Oral Cola market', '', 'Termiz shahar', 'South brothersga yetmay'),
-      ('', 'Muxlis Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Anjir Market', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Sevimli Market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Abbos market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Dilya opa', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Sanjar aka', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Nur market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', '547 market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Shox market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Makro market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Xusan bobo market', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Fresh market umid aka', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli'),
-      ('', 'Hoji ona market', '', 'Termiz shahar', 'Med yoni'),
-      ('', 'Chinor market', '', 'Termiz shahar', 'Med yoni'),
-      ('', '16 market', '', 'Termiz shahar', 'Begoyim roʻparasi'),
-      ('YALKAPOVA DILAFRUZ', 'Lada yoni', '', 'Termiz shahar', 'Lada yoni'),
-      ('', 'Alibek aka', '', 'Termiz shahar', 'Sohil pastlik'),
-      ('', '4 aka-uka', '', 'Termiz shahar', 'sohil'),
-      ('', 'Rayxon opa sohil', '', 'Termiz shahar', 'Guliston ma-si'),
-      ('', 'Muhabbat opa', '', 'Termiz shahar', 'Boyqishloq'),
-      ('', 'Moyka yoni', '', 'Termiz shahar', 'Moyka yoni'),
-      ('', 'Malika yoni optom', '', 'Termiz shahar', 'Malika yoni optom'),
-      ('', 'AR market', '', 'Termiz shahar', 'Abdurashid market'),
-      ('', 'Kam-kam Market', '', 'Termiz shahar', '23-dom yoni'),
-      ('', 'Osiyo tagi', '', 'Termiz shahar', ''),
-      ('', '24/7 Market', '', 'Termiz shahar', ''),
-      ('', 'Nigora opa', '', 'Termiz shahar', 'Eski pioner oldi'),
-      ('', 'Sherbek aka/fresh M', '', 'Termiz shahar', 'Best roʻparasi'),
-      ('', 'Otabek aka', '', 'Termiz shahar', 'antena tagi'),
-      ('', 'Universal Market', '', 'Termiz shahar', 'Lola kafe yoni'),
-      ('', 'Aka-Uka Market', '', 'Termiz shahar', 'Masjid yoni'),
-      ('', 'Oila Market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Boxo market', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Otabek zapchast M', '', 'Termiz shahar', 'zilyonni yoʻli'),
-      ('', 'Maya market', '', 'Termiz shahar', 'Gostsatndart yoni'),
-      ('', 'Umida opa', '', 'Termiz shahar', 'Mashhura yoʻli'),
-      ('', 'Darband city', '', 'Termiz shahar', 'Vokzal yoni'),
-      ('', 'Otajon market', '', 'Termiz shahar', 'Tisudan keyin'),
-      ('', 'Barakali market', '', 'Termiz shahar', 'Tisu yoni'),
-      ('', 'Asilabonu', '', 'Termiz shahar', 'Boysun bekati yoni'),
-      ('', 'Norqulova Nargiza', '', 'Termiz shahar', 'Hayit ala uyi taraf'),
-      ('', 'Sherzod aka', '', 'Termiz shahar', 'Harbiy doʻkon'),
-      ('', 'Bahor Market', '', 'Termiz tuman', ''),
-      ('', 'Baraka Market', '', 'Termiz tuman', ''),
-      ('', 'Farxod Market', '', 'Senter Kamaz', ''),
-      ('', 'Ariqcha Market', '', 'Senter Kamaz', ''),
-      ('', 'Xolida Market', '', 'Limon', ''),
-      ('', '7Я Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Jahon Market', '', 'Termiz shahar', 'indenim'),
-      ('', 'Abrayev Oral Market', '', 'Termiz shahar', '5-daha doktar A'),
-      ('', 'Abidov Jamshid', '', 'Termiz shahar', 'Yashil dunyo Tisu yoni'),
-      ('', '878 Market', '', 'Termiz shahar', 'Kapalak domi roparasi'),
-      ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi'),
-      ('', 'Nazarova Nodira', '', 'Termiz shahar', 'SOHIL MED TEXNIKUM TOGRISI'),
-      ('URALOV ZUHRIDDIN', 'HALOL MARKET', '', 'Termiz shahar', '23-dom'),
-      ('', 'Aziza opa', '', 'Termiz shahar', 'Nargiza opa sinlisi'),
-      ('', '5x5 market', '', 'Termiz shahar', 'Tadjikiskiy'),
-      ('', 'BEXRUZ OMAD NUR', '', 'Termiz shahar', 'Otan polvon yoni'),
-      ('', 'Abdujabbor Market', '', 'Termiz shahar', 'Senter bozor yonboshi'),
-      ('', 'Baratova Nodira', '', 'Termiz shahar', 'Shahar sudi togrisi'),
-      ('', 'Roziyev Ismoil', '', 'Termiz shahar', 'Doktor A yoni'),
-      ('', 'Black bekat', '', 'Termiz shahar', 'texnikum yoni'),
-      ('', 'Xonadon Market', '', 'Termiz shahar', '16-daha'),
-      ('', 'Shuhrat aka', '', 'Termiz shahar', 'viloyat raddomi'),
-      ('', 'NORMAMATOV BAHODIR', '', 'Termiz shahar', 'YEVRO MARTDAN KEYINGI'),
-      ('', 'Bobayorova Sayyora', '', 'Termiz shahar', ''),
-      ('', 'Diyorova Muborak', '', 'Termiz shahar', 'Zagazerno'),
-      ('', 'Lokomativ market-depo', '', 'Termiz shahar', 'Zagazerno'),
-      ('', 'Sveta opa', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', '1-dokon', '', 'Termiz shahar', 'Yashil dunyo'),
-      ('', 'Salmon nondog bekat', '', 'Termiz shahar', 'viloyat sudi orqasi'),
-      ('', 'Talaba Market', '', 'Termiz shahar', 'TerDU'),
-      ('', 'Abror aka Market', '', 'Termiz shahar', 'Gulom Muhammad'),
-      ('', 'ALLAMURODOVA IQBOL', '', 'Termiz shahar', 'TURON MAHALLADAN KIRGANDA 100 METR TOGRIGA'),
-      ('', 'Crafers bekat', '', 'Termiz shahar', 'eski pioner roparasi'),
-  ]
-  for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
-    cursor.execute(
-        """INSERT OR IGNORE INTO shops (firm, name, phone, debt, region, landmark, territory) 
-             VALUES (?, ?, ?, 0, ?, ?, '')""",
-        (s_firm, s_name, s_phone, s_region, s_landmark),
-    )
-
-  initial_products = [
-      ('Pelmen /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6200, 14000.0, 14000.0, 5),
-      ('Pelmen /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 9900, 24000.0, 24000.0, 5),
-      ('Pelmen rasepnoy /kg', 'Yarim Tayyor Mahsulotlari', 1000, 19500, 46000.0, 46000.0, 5),
-      ('Teftel /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 12000, 23000.0, 23000.0, 5),
-      ('Pelmen ossarti /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 18000, 30000.0, 30000.0, 5),
-      ('Pelmen ossarti /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11500, 20000.0, 20000.0, 5),
-      ('Golubtsi /500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 14000, 25000.0, 25000.0, 5),
-      ('Tok doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 17000.0, 17000.0, 5),
-      ('KFC', 'Yarim Tayyor Mahsulotlari', 1000, 27500, 30000.0, 30000.0, 5),
-      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 1000.0, 15000, 30000.0, 30000.0, 5),
-      ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 1000, 7000.0, 15000.0, 15000.0, 5),
-      ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 10000, 2000.0, 6000.0, 6000.0, 5),
-      ('Kotlet', 'Yarim Tayyor Mahsulotlari', 1000, 11000.0, 25000.0, 25000.0, 5),
-      ('Lavash hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 3800.0, 7000.0, 7000.0, 5),
-      ('Manti hamiri', 'Yarim Tayyor Mahsulotlari', 1000, 6000.0, 13000.0, 13000.0, 5),
-      ('Farsh', 'Yarim Tayyor Mahsulotlari', 1000, 15500.0, 19500.0, 19500.0, 5),
-      ('Mirinda 250gr/30шт', 'Yaxna ichimliklari', 1000, 7950.0, 9000.0, 9000.0, 3),
-      ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 1000, 8800.0, 10000.0, 10000.0, 3),
-      ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0, 3),
-      ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0, 3),
-      ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Pudra Kalso/014/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
-      ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
-      ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
-  ]
-  for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
-    cursor.execute(
-        '''INSERT OR IGNORE INTO products (name, category, stock, cost_price, optom_price, chakana_price, agent_percent) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
     )
 
   conn.commit()
@@ -882,10 +739,11 @@ def zavsklad_combine_and_send(call):
 @bot.message_handler(func=lambda message: message.text == '🚚 Yetkazilishi Kerak Buyurtmalar')
 def ekspeditor_view_orders(message):
     conn = get_db_connection()
-    orders = conn.execute("SELECT id, shop_name, total_sum, items_text FROM orders WHERE status = 'Otgruzka' ORDER BY id DESC").fetchall()
+    # Ekspeditor ham "Yangi", ham "Otgruzka" statusidagi buyurtmalarni ko'ra oladi
+    orders = conn.execute("SELECT id, shop_name, total_sum, items_text, status FROM orders WHERE status IN ('Yangi', 'Otgruzka') ORDER BY id DESC").fetchall()
     conn.close()
     if not orders:
-        bot.send_message(message.chat.id, "Hozirda yetkazishga tayyor (Otgruzka holatidagi) buyurtmalar yo'q.")
+        bot.send_message(message.chat.id, "Hozirda yetkazishga tayyor buyurtmalar yo'q.")
         return
     
     for o in orders:
@@ -894,6 +752,7 @@ def ekspeditor_view_orders(message):
         text = (
             f"🚚 **Buyurtma ID: #{o['id']}**\n"
             f"🏪 Do'kon: {o['shop_name']}\n"
+            f"📌 Status: **{o['status']}**\n"
             f"💰 Summa: {o['total_sum']:,.0f} so'm\n\n"
             f"Tafsilot:\n{o['items_text']}"
         )
@@ -1044,6 +903,13 @@ def finish_sex_income(message):
     )
     items_text += f'🔹 {p_name}: +{qty}\n'
     cart_items.append({'name': p_name, 'qty': qty})
+    
+    # Bazaga product_incomes tarixiga yozish
+    bugun_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    cursor.execute(
+        'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, 0, ?)',
+        (p_name, qty, bugun_str)
+    )
 
   staff_res = cursor.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
@@ -1051,11 +917,6 @@ def finish_sex_income(message):
   staff_name = staff_res['name'] if staff_res else 'Nomalum'
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-  cursor.execute(
-      'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES'
-      " (?, ?, 0, ?)",
-      (items_text, sum(data['sex_cart'].values()), bugun),
-  )
   income_id = cursor.lastrowid
   conn.commit()
   conn.close()
@@ -1476,6 +1337,7 @@ def add_shop():
     pass
   conn.close()
   return redirect(url_for('operator_dashboard'))
+
 @app.route('/update_order/<int:order_id>', methods=['POST'])
 def update_order(order_id):
     shop_name = request.form.get('shop_name')
@@ -1495,7 +1357,6 @@ def update_order(order_id):
         for line in old_order['items_text'].split('\n'):
             if line.strip():
                 try:
-                    # Xatolik chiqmasligi uchun to'g'rilangan qism
                     parts = line.split(' - ')
                     if len(parts) > 1:
                         p_name = parts[0].strip()
@@ -2748,14 +2609,14 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                         <div class="col-md-7">
-                            <div class="card-glass p-4">
+                            <div class="card-glass p-4 mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h5 class="fw-bold mb-0"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar va (+ / -) Boshqaruvi</h5>
+                                    <h5 class="fw-bold mb-0"><i class="bi bi-boxes me-2"></i>Ombordagi Qoldiqlar va Narxlar</h5>
                                     <input type="text" id="productSearchInput" class="form-control form-control-sm" placeholder="Mahsulot qidirish..." style="width: 200px;" onkeyup="filterProductsTable()">
                                 </div>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="productsTable">
-                                        <thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Optom narx</th><th>Agent Foiz (%)</th><th>Skladni +- qilish</th></tr></thead>
+                                        <thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Tannarx</th><th>Optom narx</th><th>Chakana narx</th><th>Sklad +-</th></tr></thead>
                                         <tbody>
                                             {% for p in products %}
                                             <tr>
@@ -2763,8 +2624,9 @@ HTML_TEMPLATE = """
                                                     <b>{{ p['name'] }}</b><br><small class="text-muted">{{ p['category'] }}</small>
                                                 </td>
                                                 <td><span class="badge bg-success fs-6">{{ p['stock'] }}</span></td>
+                                                <td>{{ "{:,.0f}".format(p['cost_price']) }}</td>
                                                 <td>{{ "{:,.0f}".format(p['optom_price']) }}</td>
-                                                <td><span class="badge bg-secondary">{{ p['agent_percent'] }}%</span></td>
+                                                <td>{{ "{:,.0f}".format(p['chakana_price']) }}</td>
                                                 <td>
                                                     <form action="/adjust_stock_web" method="POST" class="d-flex gap-1 align-items-center">
                                                         <input type="hidden" name="prod_id" value="{{ p['id'] }}">
@@ -2774,6 +2636,27 @@ HTML_TEMPLATE = """
                                                     </form>
                                                 </td>
                                             </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Skladga kirim qilingan mahsulotlar tarixi (Product incomes history) -->
+                            <div class="card-glass p-4">
+                                <h5 class="fw-bold mb-3"><i class="bi bi-clock-history me-2 text-primary"></i>Skladga Tovar Kirim Tarixi (Product Incomes History)</h5>
+                                <div class="table-responsive" style="max-height: 250px;">
+                                    <table class="table table-sm table-bordered">
+                                        <thead><tr><th>Sana</th><th>Mahsulot / Tafsilot</th><th>Miqdor</th></tr></thead>
+                                        <tbody>
+                                            {% for inc in product_incomes_history %}
+                                            <tr>
+                                                <td><small>{{ inc['date'] }}</small></td>
+                                                <td>{{ inc['product_name'] }}</td>
+                                                <td class="text-success fw-bold">+{{ inc['qty'] }}</td>
+                                            </tr>
+                                            {% else %}
+                                            <tr><td colspan="3" class="text-center text-muted">Kirim tarixi mavjud emas</td></tr>
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -3125,7 +3008,6 @@ HTML_TEMPLATE = """
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // Barcha mahsulotlar ro'yxatini saqlab turish uchun global massiv
 let allProductsList = [
     {% for p in products %}
     {name: "{{ p['name'] | e }}", price: "{{ p['optom_price'] }}"},
@@ -3150,7 +3032,7 @@ function openEditOrderModal(id, shopName, discount, comment, priceType, itemsTex
             hasItems = true;
             let parts = line.split(' - ');
             let pName = parts[0].trim();
-            let qtyPart = parts[1] ? parts[1].split('x')[0].trim() : '1';
+            let qtyPart = parts[1] ? parts[1].split('x')[0].strip().replace(',', '.') : '1';
             
             addEditModalRow(pName, qtyPart);
         }
@@ -3301,6 +3183,7 @@ def operator_dashboard():
   shops = conn.execute('SELECT * FROM shops ORDER BY name').fetchall()
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
+  product_incomes_history = conn.execute('SELECT * FROM product_incomes ORDER BY id DESC LIMIT 50').fetchall()
 
   orders = conn.execute('SELECT * FROM orders WHERE date LIKE ? ORDER BY id DESC', (f'{start_date}%',)).fetchall()
 
@@ -3379,8 +3262,26 @@ def operator_dashboard():
   total_revenue_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE status != 'Bekor'").fetchone()
   total_revenue = total_revenue_res['s'] if total_revenue_res and total_revenue_res['s'] else 0
 
+  # Sotilgan tovarlar tannarxini hisoblash (Total Cost of Goods Sold)
+  all_valid_orders = conn.execute("SELECT items_text FROM orders WHERE status != 'Bekor'").fetchall()
   total_cost = 0
-  net_profit = total_revenue - exp_sum
+  for ao in all_valid_orders:
+      for line in ao['items_text'].split('\n'):
+          if line.strip():
+              try:
+                  parts = line.split(' - ')
+                  p_name = parts[0].strip()
+                  qty_part = parts[1].split('x')[0].strip().replace(',', '.')
+                  qty = float(qty_part)
+                  prod_info = conn.execute("SELECT cost_price FROM products WHERE name = ?", (p_name,)).fetchone()
+                  if prod_info:
+                      c_price = prod_info['cost_price'] or 0
+                      total_cost += c_price * qty
+              except:
+                  pass
+
+  # Sof foyda = Umumiy tushum - Sotilgan tovarlar tannarxi - Umumiy chiqimlar
+  net_profit = total_revenue - total_cost - exp_sum
   conn.close()
 
   return render_template_string(
@@ -3407,6 +3308,7 @@ def operator_dashboard():
       expenses_list=expenses_list,
       advances_list=advances_list,
       agents_salary_data=agents_salary_data,
+      product_incomes_history=product_incomes_history,
   )
 
 
@@ -3604,11 +3506,21 @@ def add_stock():
         'INSERT INTO products (name, category, stock, cost_price, optom_price, chakana_price) VALUES (?, ?, ?, ?, ?, ?)',
         (name, category, qty, cost_price, optom_price, optom_price),
     )
+    prod_name_for_history = name
   else:
     conn.execute(
         'UPDATE products SET stock = stock + ?, cost_price = ?, optom_price = ? WHERE name = ?',
         (qty, cost_price, optom_price, product_select),
     )
+    prod_name_for_history = product_select
+
+  # Kirim tarixiga qo'shish
+  bugun_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+  conn.execute(
+      'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, ?, ?)',
+      (prod_name_for_history, qty, cost_price, bugun_str)
+  )
+
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
