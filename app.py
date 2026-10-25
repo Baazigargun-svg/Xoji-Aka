@@ -1,6 +1,7 @@
 from datetime import datetime
 import io
 import threading
+import time
 import os
 import sqlite3
 from flask import (
@@ -20,16 +21,24 @@ import telebot
 from telebot import types
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "8573337094:AAHscn84FtzQOrq-QvXs_MDwZo5or8Sob6I"
-ADMIN_ID = 6851851908
-SEX_GROUP_ID = -1003936599812  # Foydalanuvchi ko'rsatgan guruh ID si
+# Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
+# Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
+SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# TeleBot dekoratorlari token bo'lmaganda ham yuklanishi uchun vaqtinchalik qiymat.
+# Haqiqiy polling faqat BOT_TOKEN berilganda ishga tushadi.
+bot = telebot.TeleBot(BOT_TOKEN or "000000:PLACEHOLDER_TOKEN")
 app = Flask(__name__)
-DB_NAME = 'xoji_aka_factory.db'
-app.secret_key = 'xoji_aka_maxfiy_kalit_2026'
-
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DB_NAME = os.environ.get('DB_NAME', 'xoji_aka_factory.db')  # Eski bazani saqlash uchun nisbiy yo‘l odati saqlandi
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(32)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin2026')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 if not os.path.exists(UPLOAD_FOLDER):
@@ -43,6 +52,42 @@ def get_db_connection():
   conn = sqlite3.connect(DB_NAME)
   conn.row_factory = sqlite3.Row
   return conn
+
+
+def safe_number(value, default=0.0, minimum=None, maximum=None):
+  """Forma qiymatini xavfsiz son qiladi; vergulli o'nlikni ham qabul qiladi."""
+  try:
+    number = float(str(value if value is not None else default).strip().replace(' ', '').replace(',', '.'))
+    if number != number or number in (float('inf'), float('-inf')):
+      return default
+  except (TypeError, ValueError):
+    return default
+  if minimum is not None:
+    number = max(minimum, number)
+  if maximum is not None:
+    number = min(maximum, number)
+  return number
+
+
+def current_actor():
+  try:
+    return str(session.get('username') or 'Tizim')
+  except Exception:
+    return 'Telegram bot'
+
+
+def log_audit(conn, action, entity='', entity_id='', details=''):
+  try:
+    actor = current_actor()
+    conn.execute('INSERT INTO audit_log (actor, action, entity, entity_id, details, date) VALUES (?, ?, ?, ?, ?, ?)',
+      (actor, str(action), str(entity), str(entity_id), str(details)[:1000], datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+  except Exception as exc:
+    print('Audit jurnaliga yozish xatosi:', exc)
+
+
+def record_stock_movement(conn, product_name, qty_change, reason, reference=''):
+  conn.execute('INSERT INTO stock_movements (product_name, qty_change, reason, reference, date, actor) VALUES (?, ?, ?, ?, ?, ?)',
+    (product_name, qty_change, reason, str(reference), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), current_actor()))
 
 
 def init_web_db():
@@ -70,8 +115,15 @@ def init_web_db():
   )
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS orders 
-                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, agent_name TEXT, items_text TEXT, total_sum REAL, discount REAL DEFAULT 0, status TEXT, date TEXT, price_type TEXT, comment TEXT DEFAULT '')'''
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, agent_name TEXT, items_text TEXT, total_sum REAL, discount REAL DEFAULT 0, status TEXT, date TEXT, price_type TEXT, comment TEXT DEFAULT '', cost_total REAL)'''
   )
+  cursor.execute("""CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, product_name TEXT NOT NULL,
+      qty_change REAL NOT NULL, reason TEXT NOT NULL, reference TEXT DEFAULT '',
+      date TEXT NOT NULL, actor TEXT DEFAULT 'Tizim')""")
+  cursor.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT NOT NULL,
+      entity TEXT, entity_id TEXT, details TEXT, date TEXT NOT NULL)""")
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS order_status_history 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, status TEXT, changed_at TEXT)'''
@@ -116,6 +168,7 @@ def init_web_db():
       ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
       ("ALTER TABLE orders ADD COLUMN price_type TEXT", "price_type"),
       ("ALTER TABLE orders ADD COLUMN comment TEXT DEFAULT ''", "comment"),
+      ("ALTER TABLE orders ADD COLUMN cost_total REAL", "cost_total"),
   ]
 
   for query, col in migrations:
@@ -125,7 +178,7 @@ def init_web_db():
       pass
 
   cursor.execute(
-      "INSERT OR REPLACE INTO users (tg_id, name, phone, role) VALUES (?,"
+      "INSERT OR IGNORE INTO users (tg_id, name, phone, role) VALUES (?,"
       " 'Admin', '', 'admin')",
       (ADMIN_ID,),
   )
@@ -1422,20 +1475,20 @@ def change_status_logic(call):
   new_status = status_map[mode]
   conn = get_db_connection()
   
-  if new_status == 'Yetkazildi':
-      ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
-      if ord_data and ord_data['status'] != 'Yetkazildi':
+  ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+  if ord_data:
+      old_delivered = ord_data['status'] == 'Yetkazildi'
+      new_delivered = new_status == 'Yetkazildi'
+      if old_delivered != new_delivered:
           shop_name = ord_data['shop_name']
-          order_sum = ord_data['total_sum']
-          
           shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
-          curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-          new_debt = curr_debt + order_sum
-          conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (new_debt, shop_name))
-
-  conn.execute(
-      'UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id)
-  )
+          if shop_res:
+              curr_debt = safe_number(shop_res['debt'])
+              delta = safe_number(ord_data['total_sum']) * (1 if new_delivered else -1)
+              conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (max(0, curr_debt + delta), shop_name))
+      conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
+      conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)',
+          (order_id, new_status, datetime.now().strftime('%Y-%m-%d %H:%M')))
   conn.commit()
   conn.close()
   bot.send_message(
@@ -1504,7 +1557,10 @@ def update_order(order_id):
     
     # 1. Oldingi buyurtma miqdorlarini skladga qaytarib qo'shamiz
     old_order = cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    if old_order and old_order['items_text']:
+    if not old_order:
+        conn.close()
+        return 'Buyurtma topilmadi.', 404
+    if old_order['items_text']:
         for line in old_order['items_text'].split('\n'):
             if line.strip():
                 try:
@@ -1514,12 +1570,14 @@ def update_order(order_id):
                         qty_part = parts[1].split('x')[0].strip().replace(',', '.')
                         old_qty = float(qty_part)
                         cursor.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (old_qty, p_name))
+                        record_stock_movement(conn, p_name, old_qty, 'Buyurtma tahriri — eski qoldiq qaytarildi', str(order_id))
                 except Exception as e:
                     print("Eski qoldiqni qaytarishda xato:", e)
                     pass
 
     # 2. Yangi mahsulotlar ro'yxatini yig'amiz
     total_sum = 0
+    cost_total = 0
     items_text = ''
     
     for i in range(len(product_names)):
@@ -1533,23 +1591,27 @@ def update_order(order_id):
         except (ValueError, TypeError, IndexError):
             continue
             
-        prod = cursor.execute('SELECT optom_price, chakana_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+        prod = cursor.execute('SELECT optom_price, chakana_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
         if prod:
             price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
-            stock_p = prod['stock'] or 0
+            stock_p = safe_number(prod['stock'])
+            if stock_p < qty:
+                conn.rollback()
+                conn.close()
+                return f"Omborda {p_name} yetarli emas. Qoldiq: {stock_p}", 400
             summa = price * qty
             total_sum += summa
+            cost_total += safe_number(prod['cost_price']) * qty
             items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
-            
-            # Skladni yangilash (ayirish)
             cursor.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+            record_stock_movement(conn, p_name, -qty, 'Buyurtma tahriri', str(order_id))
 
     final_sum = max(0, total_sum - discount)
 
     # 3. Buyurtmani bazada yangilash
     cursor.execute(
-        'UPDATE orders SET shop_name = ?, total_sum = ?, items_text = ?, price_type = ?, discount = ?, comment = ? WHERE id = ?',
-        (shop_name, final_sum, items_text, price_type, discount, comment, order_id)
+        'UPDATE orders SET shop_name = ?, total_sum = ?, items_text = ?, price_type = ?, discount = ?, comment = ?, cost_total = ? WHERE id = ?',
+        (shop_name, final_sum, items_text, price_type, discount, comment, cost_total, order_id)
     )
     conn.commit()
     conn.close()
@@ -1582,11 +1644,11 @@ def update_shop(shop_id):
 def update_product(prod_id):
   name = request.form['name']
   category = request.form.get('category', 'Boshqa')
-  stock = float(request.form.get('stock', 0))
-  cost_price = float(request.form.get('cost_price', 0))
-  optom_price = float(request.form.get('optom_price', 0))
-  chakana_price = float(request.form.get('chakana_price', optom_price))
-  agent_percent = float(request.form.get('agent_percent', 5))
+  stock = safe_number(request.form.get('stock', 0), minimum=0)
+  cost_price = safe_number(request.form.get('cost_price', 0), minimum=0)
+  optom_price = safe_number(request.form.get('optom_price', 0), minimum=0)
+  chakana_price = safe_number(request.form.get('chakana_price', optom_price), minimum=0)
+  agent_percent = safe_number(request.form.get('agent_percent', 5), minimum=0, maximum=100)
 
   conn = get_db_connection()
   try:
@@ -1615,9 +1677,18 @@ def update_product(prod_id):
 def adjust_stock_web():
   prod_id = request.form.get('prod_id')
   action = request.form.get('action')
-  qty = float(request.form.get('qty', 0))
+  qty = safe_number(request.form.get('qty', 0), minimum=0)
+  if qty <= 0:
+    return 'Miqdor noldan katta bo‘lishi kerak.', 400
 
   conn = get_db_connection()
+  product = conn.execute('SELECT name, stock FROM products WHERE id = ?', (prod_id,)).fetchone()
+  if not product:
+    conn.close()
+    return 'Mahsulot topilmadi.', 404
+  if action == 'minus' and safe_number(product['stock']) < qty:
+    conn.close()
+    return 'Omborda yetarli mahsulot yo‘q.', 400
   if action == 'plus':
     conn.execute(
         'UPDATE products SET stock = stock + ? WHERE id = ?', (qty, prod_id)
@@ -1626,6 +1697,11 @@ def adjust_stock_web():
     conn.execute(
         'UPDATE products SET stock = stock - ? WHERE id = ?', (qty, prod_id)
     )
+  else:
+    conn.close()
+    return 'Noto‘g‘ri amal.', 400
+  record_stock_movement(conn, product['name'], qty if action == 'plus' else -qty, 'Qo‘lda tuzatish', 'Web panel')
+  log_audit(conn, 'Ombor qoldig‘i o‘zgartirildi', 'product', prod_id, f'{action}:{qty}')
   conn.commit()
   conn.close()
   return redirect(url_for('operator_dashboard'))
@@ -1981,6 +2057,7 @@ def agent_webapp(tg_id):
         qtys = request.form.getlist('qty')
         
         total_sum = 0
+        cost_total = 0
         items_text = ''
         excel_cart_items = []
         
@@ -1992,21 +2069,29 @@ def agent_webapp(tg_id):
             except:
                 qty = 1
                 
-            prod = conn.execute('SELECT optom_price, chakana_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+            prod = conn.execute('SELECT optom_price, chakana_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
             if prod:
                 price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
                 stock_p = prod['stock'] or 0
+                if qty <= 0:
+                    continue
+                if stock_p < qty:
+                    conn.rollback()
+                    conn.close()
+                    return 'Omborda mahsulot yetarli emas: ' + str(p_name), 400
                 summa = price * qty
                 total_sum += summa
+                cost_total += safe_number(prod['cost_price']) * qty
                 items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
                 conn.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+                record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Agent webapp')
                 excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
                 
         bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment) VALUES (?, ?, ?, ?, "Yangi", ?, ?, 0, ?)',
-            (shop_name, agent_name, total_sum, items_text, bugun, price_type, comment),
+            'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment, cost_total) VALUES (?, ?, ?, ?, "Yangi", ?, ?, 0, ?, ?)',
+            (shop_name, agent_name, total_sum, items_text, bugun, price_type, comment, cost_total),
         )
         order_id = cursor.lastrowid
         conn.commit()
@@ -2300,12 +2385,12 @@ def finish_order_with_comment(message):
     return
 
   conn = get_db_connection()
-  total_sum, items_text, p_type = 0, '', data['price_type']
+  total_sum, cost_total, items_text, p_type = 0, 0, '', data['price_type']
   excel_cart_items = []
 
   for p_name, qty in data['cart'].items():
     prod = conn.execute(
-        'SELECT optom_price, chakana_price, stock, id FROM products WHERE name ='
+        'SELECT optom_price, chakana_price, cost_price, stock, id FROM products WHERE name ='
         ' ?',
         (p_name,),
     ).fetchone()
@@ -2316,13 +2401,19 @@ def finish_order_with_comment(message):
     stock_p = prod['stock'] if prod['stock'] is not None else 0
 
     price = optom_p if p_type == 'optom' else chakana_p
+    if qty <= 0 or stock_p < qty:
+      conn.close()
+      bot.send_message(message.chat.id, f'❌ Omborda {p_name} yetarli emas yoki miqdor noto‘g‘ri.')
+      return
     summa = price * qty
     total_sum += summa
+    cost_total += safe_number(prod['cost_price']) * qty
     items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
     conn.execute(
         'UPDATE products SET stock = ? WHERE id = ?',
         (stock_p - qty, prod['id']),
     )
+    record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Telegram bot')
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   shop_name = data['shop_name']
@@ -2336,17 +2427,8 @@ def finish_order_with_comment(message):
   cursor = conn.cursor()
   cursor.execute(
       'INSERT INTO orders (shop_name, agent_name, total_sum, items_text,'
-      " status, date, price_type, comment) VALUES (?, ?, ?, ?, 'Yangi', ?, ?,"
-      ' ?)',
-      (
-          shop_name,
-          agent_name,
-          total_sum,
-          items_text,
-          bugun,
-          p_type,
-          comment,
-      ),
+      " status, date, price_type, comment, cost_total) VALUES (?, ?, ?, ?, 'Yangi', ?, ?, ?, ?)",
+      (shop_name, agent_name, total_sum, items_text, bugun, p_type, comment, cost_total),
   )
   order_id = cursor.lastrowid
   conn.commit()
@@ -3350,7 +3432,7 @@ def operator_dashboard():
   users = conn.execute('SELECT * FROM users').fetchall()
   product_incomes_history = conn.execute('SELECT * FROM product_incomes ORDER BY id DESC LIMIT 50').fetchall()
 
-  orders = conn.execute('SELECT * FROM orders WHERE date LIKE ? ORDER BY id DESC', (f'{start_date}%',)).fetchall()
+  orders = conn.execute("SELECT * FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? ORDER BY id DESC", (start_date, end_date)).fetchall()
 
   formatted_orders = []
   for o in orders:
@@ -3359,7 +3441,7 @@ def operator_dashboard():
     o_dict['history'] = [dict(h) for h in history]
     formatted_orders.append(o_dict)
 
-  daily_sum_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE date LIKE ? AND status != 'Bekor'", (f'{start_date}%',)).fetchone()
+  daily_sum_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? AND status != 'Bekor'", (start_date, end_date)).fetchone()
   daily_sum = daily_sum_res['s'] if daily_sum_res and daily_sum_res['s'] else 0
 
   incomes_list = conn.execute('SELECT * FROM incomes ORDER BY id DESC LIMIT 50').fetchall()
@@ -3428,21 +3510,25 @@ def operator_dashboard():
   total_revenue = total_revenue_res['s'] if total_revenue_res and total_revenue_res['s'] else 0
 
   # Sotilgan tovarlar tannarxini hisoblash (Total Cost of Goods Sold)
-  all_valid_orders = conn.execute("SELECT items_text FROM orders WHERE status != 'Bekor'").fetchall()
+  all_valid_orders = conn.execute("SELECT id, items_text, cost_total FROM orders WHERE status != 'Bekor'").fetchall()
   total_cost = 0
   for ao in all_valid_orders:
-      for line in ao['items_text'].split('\n'):
+      # Yangi buyurtmalar tannarxni buyurtma vaqtida saqlaydi. Eski buyurtmalar uchun
+      # tarixiy tannarx mavjud bo'lmagani sababli amaldagi tannarxdan taxmin qilinadi.
+      if ao['cost_total'] is not None:
+          total_cost += safe_number(ao['cost_total'])
+          continue
+      for line in (ao['items_text'] or '').split('\n'):
           if line.strip():
               try:
                   parts = line.split(' - ')
                   p_name = parts[0].strip()
                   qty_part = parts[1].split('x')[0].strip().replace(',', '.')
-                  qty = float(qty_part)
+                  qty = safe_number(qty_part)
                   prod_info = conn.execute("SELECT cost_price FROM products WHERE name = ?", (p_name,)).fetchone()
                   if prod_info:
-                      c_price = prod_info['cost_price'] or 0
-                      total_cost += c_price * qty
-              except:
+                      total_cost += safe_number(prod_info['cost_price']) * qty
+              except Exception:
                   pass
 
   # Sof foyda = Umumiy tushum - Sotilgan tovarlar tannarxi - Umumiy chiqimlar
@@ -3481,7 +3567,7 @@ def operator_dashboard():
 def web_add_order():
   shop_name = request.form.get('shop_name')
   agent_name = request.form.get('agent_name', 'Admin (Web)')
-  discount = float(request.form.get('discount', 0))
+  discount = safe_number(request.form.get('discount', 0), minimum=0)
   comment = request.form.get('comment', '')
 
   product_names = request.form.getlist('product_name')
@@ -3489,6 +3575,7 @@ def web_add_order():
 
   conn = get_db_connection()
   total_sum = 0
+  cost_total = 0
   items_text = ''
   excel_cart_items = []
 
@@ -3496,25 +3583,33 @@ def web_add_order():
     p_name = product_names[i]
     if not p_name:
       continue
-    qty = float(qtys[i]) if i < len(qtys) else 1
+    qty = safe_number(qtys[i] if i < len(qtys) else 1, minimum=0)
+    if qty <= 0:
+      continue
 
-    prod = conn.execute('SELECT optom_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+    prod = conn.execute('SELECT optom_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
     if prod:
       price = prod['optom_price'] if prod['optom_price'] is not None else 0
       stock_p = prod['stock'] if prod['stock'] is not None else 0
+      if stock_p < qty:
+        conn.rollback()
+        conn.close()
+        return f"Omborda {p_name} yetarli emas. Qoldiq: {stock_p}", 400
       summa = price * qty
       total_sum += summa
+      cost_total += safe_number(prod['cost_price']) * qty
       items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
       conn.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+      record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Web panel')
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  final_sum = total_sum - discount
+  final_sum = max(0, total_sum - discount)
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
   cursor.execute(
-      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment) VALUES (?, ?, ?, ?, "Yangi", ?, ?, ?, ?)',
-      (shop_name, agent_name, final_sum, items_text, bugun, 'optom', discount, comment),
+      'INSERT INTO orders (shop_name, agent_name, total_sum, items_text, status, date, price_type, discount, comment, cost_total) VALUES (?, ?, ?, ?, "Yangi", ?, ?, ?, ?, ?)',
+      (shop_name, agent_name, final_sum, items_text, bugun, 'optom', discount, comment, cost_total),
   )
   order_id = cursor.lastrowid
   conn.commit()
@@ -3542,16 +3637,24 @@ def update_status(order_id):
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   
-  if new_status == 'Yetkazildi':
-      ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
-      if ord_data and ord_data['status'] != 'Yetkazildi':
-          shop_name = ord_data['shop_name']
-          order_sum = ord_data['total_sum']
-          shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
-          curr_debt = shop_res['debt'] if shop_res and shop_res['debt'] is not None else 0
-          new_debt = curr_debt + order_sum
-          conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (new_debt, shop_name))
-
+  allowed_statuses = {'Yangi', 'Otgruzka', 'Yetkazildi', 'Bekor'}
+  if new_status not in allowed_statuses:
+      conn.close()
+      return 'Buyurtma holati noto‘g‘ri.', 400
+  ord_data = conn.execute("SELECT shop_name, total_sum, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+  if not ord_data:
+      conn.close()
+      return 'Buyurtma topilmadi.', 404
+  # Qarz faqat yetkazilgan holatga kirganda qo‘shiladi, undan chiqganda qaytariladi.
+  old_delivered = ord_data['status'] == 'Yetkazildi'
+  new_delivered = new_status == 'Yetkazildi'
+  if old_delivered != new_delivered:
+      shop_name = ord_data['shop_name']
+      shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
+      if shop_res:
+          curr_debt = safe_number(shop_res['debt'])
+          delta = safe_number(ord_data['total_sum']) * (1 if new_delivered else -1)
+          conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (max(0, curr_debt + delta), shop_name))
   conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
   conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (order_id, new_status, bugun))
   conn.commit()
@@ -3564,8 +3667,10 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        if username == 'admin' and password == 'admin2026':
+        if username == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+            session.clear()
             session['logged_in'] = True
+            session['username'] = username
             return redirect(url_for('index'))
         return "Login yoki parol xato! <a href='/login'>Qaytadan urinish</a>"
     return '''
@@ -3659,9 +3764,11 @@ def print_single_nakladnoy(order_id):
 @app.route('/add_stock', methods=['POST'])
 def add_stock():
   product_select = request.form.get('product_select')
-  qty = float(request.form.get('qty', 0))
-  cost_price = float(request.form.get('cost_price', 0))
-  optom_price = float(request.form.get('optom_price', 0))
+  qty = safe_number(request.form.get('qty', 0), minimum=0)
+  cost_price = safe_number(request.form.get('cost_price', 0), minimum=0)
+  optom_price = safe_number(request.form.get('optom_price', 0), minimum=0)
+  if qty <= 0:
+    return 'Kirim miqdori noldan katta bo‘lishi kerak.', 400
 
   conn = get_db_connection()
   if product_select == 'NEW':
@@ -3685,6 +3792,8 @@ def add_stock():
       'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, ?, ?)',
       (prod_name_for_history, qty, cost_price, bugun_str)
   )
+  record_stock_movement(conn, prod_name_for_history, qty, 'Kirim', 'Web panel')
+  log_audit(conn, 'Ombor kirimi', 'product', prod_name_for_history, f'miqdor={qty}; tannarx={cost_price}')
 
   conn.commit()
   conn.close()
@@ -3694,7 +3803,9 @@ def add_stock():
 @app.route('/pay_debt', methods=['POST'])
 def pay_debt():
   shop_id = request.form.get('shop_id')
-  amount = float(request.form.get('amount', 0))
+  amount = safe_number(request.form.get('amount', 0), minimum=0)
+  if amount <= 0:
+    return 'To‘lov miqdori noldan katta bo‘lishi kerak.', 400
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   conn = get_db_connection()
@@ -3713,7 +3824,9 @@ def pay_debt():
 
 @app.route('/add_income', methods=['POST'])
 def add_income():
-  source, amount = request.form['source'], float(request.form['amount'])
+  source, amount = request.form.get('source', '').strip(), safe_number(request.form.get('amount'), minimum=0)
+  if not source or amount <= 0:
+    return 'Manba va musbat summa kiriting.', 400
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute('INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)', (source, amount, today))
@@ -3724,7 +3837,9 @@ def add_income():
 
 @app.route('/add_expense', methods=['POST'])
 def add_expense():
-  reason, amount = request.form['reason'], float(request.form['amount'])
+  reason, amount = request.form.get('reason', '').strip(), safe_number(request.form.get('amount'), minimum=0)
+  if not reason or amount <= 0:
+    return 'Xarajat sababi va musbat summa kiriting.', 400
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute('INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)', (reason, amount, today))
@@ -3736,7 +3851,9 @@ def add_expense():
 @app.route('/add_advance', methods=['POST'])
 def add_advance():
   worker_name = request.form['worker_name']
-  amount = float(request.form.get('amount', 0))
+  amount = safe_number(request.form.get('amount', 0), minimum=0)
+  if amount <= 0:
+    return 'Avans miqdori noldan katta bo‘lishi kerak.', 400
   today = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn = get_db_connection()
   conn.execute('INSERT INTO advances (worker_name, amount, date) VALUES (?, ?, ?)', (worker_name, amount, today))
@@ -3781,14 +3898,17 @@ def run_bot():
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
         except Exception as e:
             print(f"Bot polling xatosi: {e}")
+            time.sleep(5)
 
 
 if __name__ == '__main__':
     init_web_db()
 
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
+    if BOT_TOKEN and ':' in BOT_TOKEN and 'PLACEHOLDER' not in BOT_TOKEN:
+        bot_thread = threading.Thread(target=run_bot, daemon=True)
+        bot_thread.start()
+    else:
+        print('DIQQAT: BOT_TOKEN sozlanmagan. Web-panel ishlaydi, Telegram bot polling ishga tushmaydi.')
 
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
