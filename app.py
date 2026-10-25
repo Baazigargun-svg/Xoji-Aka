@@ -8,6 +8,7 @@ import logging
 import hmac
 import hashlib
 import shutil
+from werkzeug.utils import secure_filename
 from urllib.parse import urlencode
 from logging.handlers import RotatingFileHandler
 from flask import (
@@ -18,6 +19,7 @@ from flask import (
     send_file,
     session,
     url_for,
+    send_from_directory,
 )
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -48,7 +50,7 @@ _file_logger.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(mes
 app.logger.addHandler(_file_logger)
 app.logger.setLevel(logging.INFO)
 BACKUP_DIR = os.path.join(BASE_DIR, 'db_backups')
-WEB_BASE_URL = os.environ.get('WEB_BASE_URL', 'https://xoji-aka-factory.onrender.com').rstrip('/')
+WEB_BASE_URL = (os.environ.get('WEB_BASE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://xoji-aka-factory.onrender.com').rstrip('/')
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -56,11 +58,11 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'bigbang0231.').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-
-if not os.path.exists(UPLOAD_FOLDER):
-  os.makedirs(UPLOAD_FOLDER)
-
+CATALOG_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'catalog')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CATALOG_UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+ALLOWED_CATALOG_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 user_steps = {}
 
 
@@ -68,6 +70,22 @@ def get_db_connection():
   conn = sqlite3.connect(DB_NAME)
   conn.row_factory = sqlite3.Row
   return conn
+
+
+def is_admin_tg(tg_id):
+  try:
+    if int(tg_id) == ADMIN_ID:
+      return True
+    conn = get_db_connection()
+    row = conn.execute('SELECT role FROM users WHERE tg_id = ?', (int(tg_id),)).fetchone()
+    conn.close()
+    return bool(row and 'admin' in (row['role'] or '').lower())
+  except Exception:
+    return False
+
+
+def allowed_catalog_file(filename):
+  return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_CATALOG_EXTENSIONS
 
 
 def safe_number(value, default=0.0, minimum=None, maximum=None):
@@ -216,6 +234,14 @@ def init_web_db():
       '''CREATE TABLE IF NOT EXISTS shops 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, firm TEXT DEFAULT '', name TEXT UNIQUE, phone TEXT, debt REAL DEFAULT 0, visit_days TEXT, region TEXT DEFAULT '', landmark TEXT DEFAULT '', inventory TEXT DEFAULT '', territory TEXT DEFAULT '')'''
   )
+  cursor.execute('''CREATE TABLE IF NOT EXISTS catalog_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      description TEXT DEFAULT '',
+      image_filename TEXT DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL)''')
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS payment_requests 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT DEFAULT 'pending', date TEXT)'''
@@ -394,7 +420,7 @@ def init_web_db():
       ('', 'Toyirova Nigora', '', 'Termiz shahar', 'Milliy gvardiya yoni'),
       ('', 'Mancho market', '', 'Termiz shahar', 'Bochka yoli'),
       ('', 'Malikov Eldor', '', 'Termiz shahar', 'Movaro'),
-      ('', 'Alisherbek Xoltora', '', 'Termiz shahar', 'Tisuga yetmay'),    
+      ('', 'Alisherbek Xoltora', '', 'Termiz shahar', 'Tisuga yetmay'),
   ]
   for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
     cursor.execute(
@@ -622,7 +648,7 @@ def create_excel_sex_income(income_id, staff_name, date_str, cart_items):
 
 def get_main_menu(role):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-  if role == 'admin':
+  if role == 'admin' or 'admin' in (role or '').lower():
     markup.row(
         types.KeyboardButton('📦 Sklad & Mahsulotlar'),
         types.KeyboardButton('📊 Kunlik Hisobot'),
@@ -631,6 +657,7 @@ def get_main_menu(role):
         types.KeyboardButton('👥 Agentlar boshqaruvi'),
         types.KeyboardButton("🏪 AKB (Do'konlar & Qarz)"),
     )
+    markup.row(types.KeyboardButton('💳 Qarzdorlik boshqaruvi'), types.KeyboardButton('📥 Kirim qo‘shish'))
   elif role == 'agent':
     markup.row(
         types.KeyboardButton('🛒 Yangi Buyurtma Urish'),
@@ -643,7 +670,7 @@ def get_main_menu(role):
     markup.row(
         types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
-    markup.row(types.KeyboardButton('🌐 Web kabinetim'))
+    markup.row(types.KeyboardButton('🌐 Web kabinetim'), types.KeyboardButton('🖼 Mahsulotlar katalogi'))
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'sex':
     markup.row(
@@ -681,7 +708,7 @@ def get_main_menu(role):
 @bot.message_handler(commands=['start'])
 def start_command(message):
   tg_id = message.from_user.id
-  if tg_id == ADMIN_ID:
+  if is_admin_tg(tg_id):
     bot.send_message(
         message.chat.id,
         'Xoji aka, xush kelibsiz! Boshqaruv paneli tayyor.',
@@ -966,7 +993,7 @@ def switch_role_menu(message):
 @bot.message_handler(func=lambda message: message.text == '📦 Yig‘ilgan Yaxlit Buyurtmalar')
 def zavsklad_view_orders(message):
     conn = get_db_connection()
-    orders = conn.execute("SELECT id, shop_name, total_sum, status, items_text FROM orders WHERE status = 'Yangi' ORDER BY id DESC").fetchall()
+    orders = conn.execute("SELECT id, shop_name, total_sum, status, items_text, date FROM orders WHERE TRIM(COALESCE(status,'')) = 'Yangi' ORDER BY date ASC, id ASC").fetchall()
     conn.close()
     if not orders:
         bot.send_message(message.chat.id, "Hozirda yig'ish uchun Yangi buyurtmalar mavjud emas.")
@@ -974,7 +1001,7 @@ def zavsklad_view_orders(message):
     
     text = "📦 **Yangi tushgan buyurtmalar (Yig'ish uchun):**\n\n"
     for o in orders:
-        text += f"🆔 **#{o['id']}** | Do'kon: {o['shop_name']} | Jami: {o['total_sum']:,.0f} so'm\n"
+        text += f"🆔 **#{o['id']}** | {o['date']} | Do'kon: {o['shop_name']} | Jami: {safe_number(o['total_sum']):,.0f} so'm\n"
     
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔗 Barcha yangi buyurtmalarni bitta yaxlit qilish va guruhga yuborish", callback_data="zav_combine_orders"))
@@ -983,7 +1010,7 @@ def zavsklad_view_orders(message):
 @bot.callback_query_handler(func=lambda call: call.data == "zav_combine_orders")
 def zavsklad_combine_and_send(call):
     conn = get_db_connection()
-    orders = conn.execute("SELECT * FROM orders WHERE status = 'Yangi'").fetchall()
+    orders = conn.execute("SELECT * FROM orders WHERE TRIM(COALESCE(status,'')) = 'Yangi' ORDER BY date ASC, id ASC").fetchall()
     if not orders:
         bot.answer_callback_query(call.id, "Yig'ish uchun buyurtmalar yo'q!")
         conn.close()
@@ -995,8 +1022,8 @@ def zavsklad_combine_and_send(call):
     
     for o in orders:
         order_ids.append(str(o['id']))
-        total_general_sum += o['total_sum']
-        for line in o['items_text'].split('\n'):
+        total_general_sum += safe_number(o['total_sum'])
+        for line in (o['items_text'] or '').split('\n'):
             if line.strip():
                 parts = line.split(' - ')
                 p_name = parts[0]
@@ -1030,6 +1057,13 @@ def zavsklad_combine_and_send(call):
             bot.send_document(SEX_GROUP_ID, doc_group, caption="📄 Yaxlit Yig'ma Nakladnoy (Excel)")
         bot.answer_callback_query(call.id, "Yaxlit buyurtma muvaffaqiyatli guruhga yuborildi!")
         bot.send_message(call.message.chat.id, "✅ Yaxlit buyurtma matn va Excel ko'rinishida guruhga yuborildi!")
+        # Faqat yuborish muvaffaqiyatli bo‘lgandan keyin barcha qatnashgan buyurtmalarni yig‘ildi holatiga o‘tkazamiz.
+        changed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for _oid in order_ids:
+            conn.execute("UPDATE orders SET status = 'Otgruzka' WHERE id = ? AND TRIM(COALESCE(status,'')) = 'Yangi'", (int(_oid),))
+            conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (int(_oid), 'Otgruzka', changed_at))
+        log_audit(conn, 'Yaxlit buyurtmalar yuborildi', 'orders', ','.join(order_ids), f'soni={len(order_ids)}; sana_filteri=yo‘q')
+        conn.commit()
     except Exception as e:
         print("Zavsklad yuborish xatosi:", e)
         bot.answer_callback_query(call.id, "Xatolik yuz berdi!")
@@ -1276,7 +1310,7 @@ def sex_view_stock(message):
 
 @bot.message_handler(func=lambda message: message.text == '📦 Sklad & Mahsulotlar')
 def admin_sklad_menu(message):
-  if message.from_user.id != ADMIN_ID:
+  if not is_admin_tg(message.from_user.id):
     return
   conn = get_db_connection()
   prods = conn.execute('SELECT id, name, stock FROM products').fetchall()
@@ -1459,6 +1493,156 @@ def process_new_p_final(message, name, optom):
     bot.send_message(message.chat.id, f'✅ Yangi mahsulot qo\'shildi: {name}')
   except:
     bot.send_message(message.chat.id, 'Xato! Bu nom allaqachon mavjud.')
+
+
+@bot.message_handler(func=lambda message: message.text == '💳 Qarzdorlik boshqaruvi')
+def admin_debt_menu(message):
+    if not is_admin_tg(message.from_user.id):
+        bot.send_message(message.chat.id, 'Bu bo‘lim faqat admin uchun.')
+        return
+    conn = get_db_connection()
+    shops = conn.execute('SELECT id, name, debt FROM shops ORDER BY name').fetchall()
+    conn.close()
+    if not shops:
+        bot.send_message(message.chat.id, 'Do‘konlar ro‘yxati bo‘sh.')
+        return
+    markup = types.InlineKeyboardMarkup()
+    text = '<b>💳 Do‘konlar qarzdorligi</b>\n\nDo‘konni tanlang:'
+    for sh in shops:
+        debt = safe_number(sh['debt'])
+        text += f"\n• {sh['name']}: {debt:,.0f} so‘m"
+        markup.add(types.InlineKeyboardButton(f"{sh['name']} ({debt:,.0f})", callback_data=f"admdebt_{sh['id']}"))
+    bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admdebt_'))
+def admin_debt_shop_selected(call):
+    if not is_admin_tg(call.from_user.id):
+        bot.answer_callback_query(call.id, 'Faqat admin uchun.', show_alert=True)
+        return
+    try:
+        shop_id = int(call.data.split('_')[-1])
+    except ValueError:
+        bot.answer_callback_query(call.id, 'Do‘kon ID noto‘g‘ri.')
+        return
+    conn = get_db_connection()
+    shop = conn.execute('SELECT id, name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
+    conn.close()
+    if not shop:
+        bot.answer_callback_query(call.id, 'Do‘kon topilmadi.')
+        return
+    user_steps[call.from_user.id] = {'admin_debt_shop_id': shop_id, 'admin_debt_shop_name': shop['name']}
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, f"🏪 {shop['name']}\nHozirgi qarz: {safe_number(shop['debt']):,.0f} so‘m\n\nQarzga qo‘shish uchun manfiy summa kiriting (masalan -510000), to‘lovni ayirish uchun musbat summa kiriting (masalan 100000):")
+    bot.register_next_step_handler(msg, admin_debt_amount_received)
+
+
+def admin_debt_amount_received(message):
+    state = user_steps.get(message.from_user.id, {})
+    shop_id = state.get('admin_debt_shop_id')
+    if not shop_id:
+        bot.send_message(message.chat.id, 'Amal muddati tugadi. Qarzdorlik bo‘limini qayta oching.')
+        return
+    try:
+        raw = float(str(message.text).replace(' ', '').replace(',', '.'))
+        if raw == 0:
+            raise ValueError()
+    except Exception:
+        msg = bot.send_message(message.chat.id, 'Nol bo‘lmagan summa kiriting. Masalan -510000 yoki 100000.')
+        bot.register_next_step_handler(msg, admin_debt_amount_received)
+        return
+    conn = get_db_connection()
+    shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
+    if not shop:
+        conn.close()
+        user_steps.pop(message.from_user.id, None)
+        bot.send_message(message.chat.id, 'Do‘kon topilmadi.')
+        return
+    # Manfiy qiymat eski qarzni qo‘shadi; musbat qiymat qarz to‘lovini ayiradi.
+    delta_debt = abs(raw) if raw < 0 else -raw
+    new_debt = safe_number(shop['debt']) + delta_debt
+    conn.execute('UPDATE shops SET debt = ? WHERE name = ?', (new_debt, shop['name']))
+    if raw > 0:
+        conn.execute('INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)', (f"Qarz to‘lovi ({shop['name']})", raw, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    log_audit(conn, 'Telegram admin qarzdorlikni o‘zgartirdi', 'shop', shop_id, f"do‘kon={shop['name']}; kiritilgan={raw}; yangi_qoldiq={new_debt}")
+    conn.commit()
+    conn.close()
+    user_steps.pop(message.from_user.id, None)
+    bot.send_message(message.chat.id, f"✅ {shop['name']} qarzdorligi yangilandi.\nYangi qarz: {new_debt:,.0f} so‘m", reply_markup=get_main_menu('admin'))
+
+
+@bot.message_handler(func=lambda message: message.text == '📥 Kirim qo‘shish')
+def admin_income_start(message):
+    if not is_admin_tg(message.from_user.id):
+        bot.send_message(message.chat.id, 'Bu bo‘lim faqat admin uchun.')
+        return
+    msg = bot.send_message(message.chat.id, 'Kirim manbasini yozing (masalan: naqd tushum, boshqa kirim):')
+    bot.register_next_step_handler(msg, admin_income_source_received)
+
+
+def admin_income_source_received(message):
+    if not is_admin_tg(message.from_user.id):
+        return
+    source = (message.text or '').strip()
+    if not source or source.startswith('/'):
+        bot.send_message(message.chat.id, 'Kirim manbasini matn bilan kiriting.')
+        return
+    user_steps[message.from_user.id] = {'admin_income_source': source}
+    msg = bot.send_message(message.chat.id, 'Kirim summasini so‘mda kiriting:')
+    bot.register_next_step_handler(msg, admin_income_amount_received)
+
+
+def admin_income_amount_received(message):
+    if not is_admin_tg(message.from_user.id):
+        return
+    state = user_steps.get(message.from_user.id, {})
+    source = state.get('admin_income_source')
+    try:
+        amount = float(str(message.text).replace(' ', '').replace(',', '.'))
+        if amount <= 0:
+            raise ValueError()
+    except Exception:
+        msg = bot.send_message(message.chat.id, 'Musbat summani kiriting, masalan 250000.')
+        bot.register_next_step_handler(msg, admin_income_amount_received)
+        return
+    conn = get_db_connection()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute('INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)', (source, amount, now))
+    log_audit(conn, 'Telegram admin kirim kiritdi', 'income', '', f'manba={source}; summa={amount}')
+    conn.commit()
+    conn.close()
+    user_steps.pop(message.from_user.id, None)
+    bot.send_message(message.chat.id, f'✅ Kirim saqlandi: {source} — {amount:,.0f} so‘m', reply_markup=get_main_menu('admin'))
+
+
+@bot.message_handler(func=lambda message: message.text == '🖼 Mahsulotlar katalogi')
+def send_product_catalog_to_agent(message):
+    conn = get_db_connection()
+    role_row = conn.execute('SELECT role FROM users WHERE tg_id = ?', (message.from_user.id,)).fetchone()
+    if not role_row or not any(r in (role_row['role'] or '') for r in ('agent', 'admin')):
+        conn.close()
+        bot.send_message(message.chat.id, 'Katalogni ko‘rish uchun agent roli kerak.')
+        return
+    items = conn.execute('SELECT name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
+    conn.close()
+    if not items:
+        bot.send_message(message.chat.id, 'Katalog hozircha bo‘sh. Operator web paneldan rasm va narxlarni joylashtiradi.')
+        return
+    bot.send_message(message.chat.id, f'🖼 <b>Xoji Aka mahsulotlar katalogi</b>\nJami mahsulot: {len(items)}', parse_mode='HTML')
+    for item in items:
+        caption = f"<b>{item['name']}</b>\n💰 Narxi: {safe_number(item['price']):,.0f} so‘m"
+        if item['description']:
+            caption += f"\n{item['description']}"
+        try:
+            image_path = os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(item['image_filename'] or ''))
+            if item['image_filename'] and os.path.isfile(image_path):
+                with open(image_path, 'rb') as photo:
+                    bot.send_photo(message.chat.id, photo, caption=caption[:1024], parse_mode='HTML')
+            else:
+                bot.send_message(message.chat.id, caption, parse_mode='HTML')
+        except Exception as exc:
+            app.logger.exception('Katalogni Telegramga yuborish xatosi: %s', exc)
+            bot.send_message(message.chat.id, caption, parse_mode='HTML')
 
 
 @bot.message_handler(
@@ -2102,6 +2286,7 @@ STAFF_WEB_TEMPLATE = """
 """
 
 @app.route('/staff_app/<int:tg_id>', methods=['GET', 'POST'])
+@app.route('/staff_app/<int:tg_id>/', methods=['GET', 'POST'])
 def staff_webapp(tg_id):
     if not verify_staff_link(tg_id):
         return "Havola yaroqsiz yoki muddati tugagan. Telegram botga qaytib, '🌐 Web kabinetim' tugmasini qayta bosing.", 403
@@ -2237,6 +2422,11 @@ AGENT_WEBAPP_TEMPLATE = """
     </div>
 
     <div class="card-mobile">
+        <h6 class="fw-bold mb-3">🖼 Do‘konchiga ko‘rsatish uchun katalog</h6>
+        <div class="row g-2">{% for c in catalog_items %}<div class="col-6"><div class="card h-100">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:130px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body p-2"><b>{{ c['name'] }}</b><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><small>{{ c['description'] or '' }}</small></div></div></div>{% else %}<div class="col-12 text-muted">Katalog hali joylanmagan.</div>{% endfor %}</div>
+    </div>
+
+    <div class="card-mobile">
         <h6 class="fw-bold mb-3"><i class="bi bi-list-check me-1"></i>Mening oxirgi buyurtmalarim</h6>
         <div class="table-responsive">
             <table class="table table-sm align-middle" style="font-size: 12px;">
@@ -2277,9 +2467,10 @@ AGENT_WEBAPP_TEMPLATE = """
 
 
 @app.route('/agent_app/<int:tg_id>', methods=['GET', 'POST'])
+@app.route('/agent_app/<int:tg_id>/', methods=['GET', 'POST'])
 def agent_webapp(tg_id):
     if not verify_staff_link(tg_id):
-        return redirect(make_staff_web_url(tg_id))
+        return "Havola eskirgan yoki imzosi mos emas. Telegram botga qayting va '🌐 Web kabinetim' tugmasini qayta bosing.", 403
     conn = get_db_connection()
     user = conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
     if not user:
@@ -2306,7 +2497,7 @@ def agent_webapp(tg_id):
             log_audit(conn, 'Agent do‘konga tashrifni qayd etdi', 'shop', shop_id, f"agent={agent_name}; tg_id={tg_id}; keyingi_tashrif={next_visit}")
             conn.commit()
             conn.close()
-            return redirect(url_for('agent_webapp', tg_id=tg_id))
+            return redirect(make_staff_web_url(tg_id))
         shop_name = request.form.get('shop_name')
         price_type = request.form.get('price_type', 'optom')
         comment = request.form.get('comment', '')
@@ -2368,7 +2559,7 @@ def agent_webapp(tg_id):
             print('Mini App buyurtmani guruhga yuborish xatosi:', e)
             
         conn.close()
-        return redirect(url_for('agent_webapp', tg_id=tg_id))
+        return redirect(make_staff_web_url(tg_id))
 
     if agent_territory:
         shops = conn.execute("SELECT * FROM shops WHERE territory = ? OR territory = '' ORDER BY name", (agent_territory,)).fetchall()
@@ -2376,6 +2567,7 @@ def agent_webapp(tg_id):
         shops = conn.execute("SELECT * FROM shops ORDER BY name").fetchall()
         
     products = conn.execute("SELECT * FROM products ORDER BY name").fetchall()
+    catalog_items = conn.execute('SELECT * FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
     my_orders = conn.execute("SELECT * FROM orders WHERE agent_name = ? ORDER BY id DESC LIMIT 20", (agent_name,)).fetchall()
     conn.close()
     
@@ -2385,6 +2577,7 @@ def agent_webapp(tg_id):
         agent_territory=agent_territory,
         shops=shops,
         products=products,
+        catalog_items=catalog_items,
         my_orders=my_orders,
         today_iso=datetime.now().strftime('%Y-%m-%d')
     )
@@ -2869,6 +3062,7 @@ HTML_TEMPLATE = """
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-agents" type="button"><i class="bi bi-people-fill"></i>Agentlar</button>
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-kassa" type="button"><i class="bi bi-wallet2"></i>Kassa</button>
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-reports" type="button"><i class="bi bi-file-earmark-bar-graph"></i>Hisobot</button>
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-catalog" type="button"><i class="bi bi-images"></i>Katalog</button>
     </div>
     <div class="flex-grow-1">
         <div class="top-bar d-flex justify-content-between align-items-center">
@@ -3371,6 +3565,22 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                 </div>
+                <div class="tab-pane fade" id="tab-catalog">
+                    <div class="card-glass p-4 mb-4">
+                        <h5 class="fw-bold mb-3">🖼 Agentlar uchun mahsulotlar katalogi</h5>
+                        <p class="text-muted small">Bu yerga mahsulot rasmi, do‘konga ko‘rsatish uchun narxi va izohini joylashtiring. Faol katalog agent web kabineti va Telegram botida ko‘rinadi.</p>
+                        <form action="/catalog_add" method="POST" enctype="multipart/form-data" class="row g-3">
+                            <div class="col-md-3"><label class="form-label">Mahsulot nomi</label><input class="form-control" name="name" required maxlength="120"></div>
+                            <div class="col-md-2"><label class="form-label">Narxi (so‘m)</label><input class="form-control" type="number" min="0" step="any" name="price" required></div>
+                            <div class="col-md-3"><label class="form-label">Rasm (JPG/PNG/WEBP)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
+                            <div class="col-md-3"><label class="form-label">Izoh</label><input class="form-control" name="description" maxlength="500" placeholder="Og‘irligi, tarkibi va h.k."></div>
+                            <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Qo‘shish</button></div>
+                        </form>
+                    </div>
+                    <div class="row g-3">
+                    {% for c in catalog_items %}<div class="col-6 col-md-3"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:180px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body"><h6 class="fw-bold">{{ c['name'] }}</h6><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><p class="small text-muted">{{ c['description'] or '' }}</p><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger w-100">O‘chirish</button></form></div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
+                    </div>
+                </div>
                 <div class="tab-pane fade" id="tab-reports">
                     <div class="card-glass p-4 mb-4">
                         <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i>Moliyaviy Hisobot (To'liq)</h5>
@@ -3721,7 +3931,7 @@ def audit_web_post(response):
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp']
+    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'catalog_image', 'healthz']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
@@ -3735,6 +3945,7 @@ def operator_dashboard():
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
   product_incomes_history = conn.execute('SELECT * FROM product_incomes ORDER BY id DESC LIMIT 50').fetchall()
+  catalog_items = conn.execute('SELECT * FROM catalog_items ORDER BY id DESC').fetchall()
   today_iso = datetime.now().strftime('%Y-%m-%d')
 
   orders = conn.execute("SELECT * FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? ORDER BY id DESC", (start_date, end_date)).fetchall()
@@ -3907,7 +4118,55 @@ def operator_dashboard():
       visit_alerts=visit_alerts,
       overdue_visits_count=overdue_visits_count,
       today_iso=today_iso,
+      catalog_items=catalog_items,
   )
+
+
+@app.route('/healthz')
+def healthz():
+  return {'ok': True, 'service': 'Xoji Aka', 'routes': ['/', '/agent_app/<tg_id>', '/staff_app/<tg_id>']}
+
+
+@app.route('/catalog-image/<path:filename>')
+def catalog_image(filename):
+  # Rasm fayllari agentlar ko‘rishi uchun ochiq; katalogni tahrirlash esa login bilan himoyalangan.
+  return send_from_directory(CATALOG_UPLOAD_FOLDER, os.path.basename(filename))
+
+
+@app.route('/catalog_add', methods=['POST'])
+def catalog_add():
+  name = (request.form.get('name') or '').strip()
+  description = (request.form.get('description') or '').strip()
+  price = safe_number(request.form.get('price'), -1)
+  image = request.files.get('image')
+  if not name or price < 0 or not image or not image.filename or not allowed_catalog_file(image.filename):
+    return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
+  ext = image.filename.rsplit('.', 1)[1].lower()
+  filename = secure_filename(f"catalog_{int(time.time() * 1000)}.{ext}")
+  image.save(os.path.join(CATALOG_UPLOAD_FOLDER, filename))
+  conn = get_db_connection()
+  conn.execute('INSERT INTO catalog_items (name, price, description, image_filename, active, created_at) VALUES (?, ?, ?, ?, 1, ?)', (name, price, description, filename, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+  log_audit(conn, 'Katalogga mahsulot qo‘shildi', 'catalog', filename, f'nomi={name}; narx={price}')
+  conn.commit()
+  conn.close()
+  return redirect(url_for('index'))
+
+
+@app.route('/catalog_delete/<int:item_id>', methods=['POST'])
+def catalog_delete(item_id):
+  conn = get_db_connection()
+  item = conn.execute('SELECT image_filename, name FROM catalog_items WHERE id = ?', (item_id,)).fetchone()
+  if item:
+    conn.execute('DELETE FROM catalog_items WHERE id = ?', (item_id,))
+    log_audit(conn, 'Katalog mahsuloti o‘chirildi', 'catalog', item_id, item['name'])
+    conn.commit()
+  conn.close()
+  if item and item['image_filename']:
+    try:
+      os.remove(os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(item['image_filename'])))
+    except OSError:
+      pass
+  return redirect(url_for('index'))
 
 
 @app.route('/add_order', methods=['POST'])
