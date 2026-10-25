@@ -4184,7 +4184,7 @@ def catalog_image(filename):
 
 
  @app.route('/catalog_add', methods=['POST'])
-def catalog_add():
+ def catalog_add():
   name = (request.form.get('name') or '').strip()
   description = (request.form.get('description') or '').strip()
   price = safe_number(request.form.get('price'), -1)
