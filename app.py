@@ -38,7 +38,7 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'bigbang0231.').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 if not os.path.exists(UPLOAD_FOLDER):
