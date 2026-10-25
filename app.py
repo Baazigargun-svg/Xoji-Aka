@@ -4,6 +4,12 @@ import threading
 import time
 import os
 import sqlite3
+import logging
+import hmac
+import hashlib
+import shutil
+from urllib.parse import urlencode
+from logging.handlers import RotatingFileHandler
 from flask import (
     Flask,
     redirect,
@@ -23,7 +29,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
@@ -34,6 +40,16 @@ app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_NAME = os.environ.get('DB_NAME', os.path.join(BASE_DIR, 'xoji_aka_factory.db'))  # Standart holatda aynan shu fayl yonidagi eski baza ishlatiladi
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(32)
+# Xatolar jurnali: fayl hajmi 2 MB dan oshsa aylantiriladi.
+LOG_FILE = os.path.join(BASE_DIR, 'xoji_aka_errors.log')
+_file_logger = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5, encoding='utf-8')
+_file_logger.setLevel(logging.INFO)
+_file_logger.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
+app.logger.addHandler(_file_logger)
+app.logger.setLevel(logging.INFO)
+BACKUP_DIR = os.path.join(BASE_DIR, 'db_backups')
+WEB_BASE_URL = os.environ.get('WEB_BASE_URL', 'https://xoji-aka-factory.onrender.com').rstrip('/')
+
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
@@ -88,6 +104,70 @@ def log_audit(conn, action, entity='', entity_id='', details=''):
 def record_stock_movement(conn, product_name, qty_change, reason, reference=''):
   conn.execute('INSERT INTO stock_movements (product_name, qty_change, reason, reference, date, actor) VALUES (?, ?, ?, ?, ?, ?)',
     (product_name, qty_change, reason, str(reference), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), current_actor()))
+
+
+def _web_link_secret():
+  return (os.environ.get('WEB_LINK_SECRET') or BOT_TOKEN or os.environ.get('FLASK_SECRET_KEY') or str(app.secret_key)).encode('utf-8')
+
+
+def make_staff_web_url(tg_id):
+  """Telegram ID uchun 15 daqiqalik imzolangan xodim havolasi."""
+  ts = int(time.time())
+  raw = f'{int(tg_id)}:{ts}'.encode('utf-8')
+  sig = hmac.new(_web_link_secret(), raw, hashlib.sha256).hexdigest()
+  # Agent uchun mavjud buyurtma kiritish sahifasi; boshqa rollar uchun rolga mos kabinet.
+  try:
+    _c = get_db_connection()
+    _u = _c.execute('SELECT role FROM users WHERE tg_id = ?', (int(tg_id),)).fetchone()
+    _c.close()
+    _role = (_u['role'] or '') if _u else ''
+  except Exception:
+    _role = ''
+  _path = 'agent_app' if ('agent' in _role and 'admin' not in _role) else 'staff_app'
+  return f'{WEB_BASE_URL}/{_path}/{int(tg_id)}?{urlencode({"ts": ts, "sig": sig})}'
+
+
+def verify_staff_link(tg_id):
+  try:
+    ts = int(request.args.get('ts', '0'))
+    sig = request.args.get('sig', '')
+    if not sig or abs(int(time.time()) - ts) > 900:
+      return False
+    expected = hmac.new(_web_link_secret(), f'{int(tg_id)}:{ts}'.encode('utf-8'), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
+  except Exception:
+    return False
+
+
+def create_database_backup():
+  """SQLite backup API orqali izchil zaxira yaratadi; oxirgi 14 nusxa saqlanadi."""
+  try:
+    if not os.path.exists(DB_NAME):
+      return
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    destination = os.path.join(BACKUP_DIR, f'xoji_aka_factory_{stamp}.db')
+    source_conn = sqlite3.connect(DB_NAME, timeout=30)
+    target_conn = sqlite3.connect(destination)
+    try:
+      source_conn.backup(target_conn)
+    finally:
+      target_conn.close()
+      source_conn.close()
+    backups = sorted([os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith('.db')], key=os.path.getmtime, reverse=True)
+    for old_path in backups[14:]:
+      try: os.remove(old_path)
+      except OSError: app.logger.exception('Eski zaxirani o‘chirishda xato: %s', old_path)
+    app.logger.info('Ma’lumotlar bazasi zaxiralandi: %s', destination)
+  except Exception:
+    app.logger.exception('Avtomatik baza zaxirasida xato')
+
+
+def backup_scheduler():
+  # Har 24 soatda; ilova ishga tushganda ham zaxira olinadi.
+  while True:
+    time.sleep(24 * 60 * 60)
+    create_database_backup()
 
 
 def init_web_db():
@@ -545,18 +625,21 @@ def get_main_menu(role):
     markup.row(
         types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
+    markup.row(types.KeyboardButton('🌐 Web kabinetim'))
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'sex':
     markup.row(
         types.KeyboardButton('📦 Skladga Mahsulot Kirim Qilish'),
         types.KeyboardButton('📋 Ombordagi Qoldiqlar'),
     )
+    markup.row(types.KeyboardButton('🌐 Web kabinetim'))
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'zavsklad':
     markup.row(
         types.KeyboardButton('📦 Yig‘ilgan Yaxlit Buyurtmalar'),
         types.KeyboardButton('📋 Ombordagi Qoldiqlar'),
     )
+    markup.row(types.KeyboardButton('🌐 Web kabinetim'))
     markup.row(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
   elif role == 'ekspeditor':
     markup.row(
@@ -567,6 +650,7 @@ def get_main_menu(role):
         types.KeyboardButton("💰 Qarz/To'lov yozish (Ekspeditor)"),
         types.KeyboardButton("📊 Do'konlar qarzi"),
     )
+    markup.row(types.KeyboardButton('🌐 Web kabinetim'))
     markup.row(
         types.KeyboardButton("📋 Status (Yetkazilmaganlar)"),
     )
@@ -1537,7 +1621,7 @@ def add_shop():
   except:
     pass
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 @app.route('/update_order/<int:order_id>', methods=['POST'])
 def update_order(order_id):
@@ -1635,7 +1719,7 @@ def update_order(order_id):
         return 'Buyurtmani saqlashda xato yuz berdi. O‘zgarishlar saqlanmadi.', 500
     finally:
         conn.close()
-    return redirect(url_for('operator_dashboard'))
+    return redirect(url_for('index'))
 
 @app.route('/update_shop/<int:shop_id>', methods=['POST'])
 def update_shop(shop_id):
@@ -1666,7 +1750,7 @@ def update_shop(shop_id):
     return 'Do‘konni saqlashda xato yuz berdi.', 500
   finally:
     conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/update_product/<int:prod_id>', methods=['POST'])
@@ -1705,7 +1789,7 @@ def update_product(prod_id):
     conn.close()
     return 'Mahsulotni saqlashda xato yuz berdi. O‘zgarishlar saqlanmadi.', 500
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/adjust_stock_web', methods=['POST'])
@@ -1739,7 +1823,7 @@ def adjust_stock_web():
   log_audit(conn, 'Ombor qoldig‘i o‘zgartirildi', 'product', prod_id, f'{action}:{qty}')
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/add_agent_web', methods=['POST'])
@@ -1767,16 +1851,16 @@ def add_agent_web():
     except Exception as e:
       print('Agent qo\'shish xatosi:', e)
     conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/import_shops_excel', methods=['POST'])
 def import_shops_excel():
   if 'excel_file' not in request.files:
-    return redirect(url_for('operator_dashboard'))
+    return redirect(url_for('index'))
   file = request.files['excel_file']
   if file.filename == '':
-    return redirect(url_for('operator_dashboard'))
+    return redirect(url_for('index'))
 
   try:
     df = pd.read_excel(file)
@@ -1836,16 +1920,16 @@ def import_shops_excel():
   except Exception as e:
     print('Excel import xatosi:', e)
 
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/import_products_excel', methods=['POST'])
 def import_products_excel():
   if 'excel_file' not in request.files:
-    return redirect(url_for('operator_dashboard'))
+    return redirect(url_for('index'))
   file = request.files['excel_file']
   if file.filename == '':
-    return redirect(url_for('operator_dashboard'))
+    return redirect(url_for('index'))
 
   try:
     df = pd.read_excel(file)
@@ -1915,7 +1999,7 @@ def import_products_excel():
   except Exception as e:
     print('Sklad Excel import xatosi:', e)
 
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/approve_agent/<int:tg_id>', methods=['POST'])
@@ -1932,7 +2016,7 @@ def web_approve_agent(tg_id):
     )
   except:
     pass
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/delete_agent/<int:tg_id>', methods=['POST'])
@@ -1941,7 +2025,7 @@ def web_delete_agent(tg_id):
   conn.execute('DELETE FROM users WHERE tg_id = ?', (tg_id,))
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/update_agent/<int:tg_id>', methods=['POST'])
@@ -1971,7 +2055,98 @@ def update_agent(tg_id):
     print('Agentni tahrirlash xatosi:', e)
   finally:
     conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
+
+
+@bot.message_handler(func=lambda message: message.text == '🌐 Web kabinetim')
+def send_staff_web_cabinet(message):
+    tg_id = message.from_user.id
+    conn = get_db_connection()
+    user = conn.execute('SELECT role, name FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
+    conn.close()
+    if not user or not user['role'] or user['role'] == 'pending':
+        bot.send_message(message.chat.id, 'Kabinet ochilmadi: Telegram ID hali tasdiqlanmagan.')
+        return
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton('🌐 Shaxsiy web kabinetni ochish', web_app=types.WebAppInfo(url=make_staff_web_url(tg_id))))
+    bot.send_message(message.chat.id, f"Salom, {user['name']}! Sizning rolingiz: {user['role']}. Havola 15 daqiqa amal qiladi.", reply_markup=markup)
+
+
+STAFF_WEB_TEMPLATE = """
+<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Xoji Aka — Xodim kabineti</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#f4f6fa}.wrap{max-width:850px;margin:20px auto;padding:12px}.card{border:0;border-radius:15px;box-shadow:0 3px 14px #0000000b;margin-bottom:14px}.muted{color:#64748b}</style></head><body><main class="wrap">
+<div class="card p-3 text-white" style="background:#173b69"><h4 class="mb-1">Xoji Aka — {{ role_label }}</h4><div>{{ name }} · Telegram ID: {{ tg_id }}</div><small>Hudud: {{ territory or 'Barcha hududlar' }}</small></div>
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+{% if role_has_agent %}<div class="card p-3"><h5>📦 Mening buyurtmalarim</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>ID</th><th>Do‘kon</th><th>Summa</th><th>Holat</th><th>Sana</th></tr></thead><tbody>{% for o in orders %}<tr><td>#{{o['id']}}</td><td>{{o['shop_name']}}</td><td>{{'{:,.0f}'.format(o['total_sum'] or 0)}} so‘m</td><td>{{o['status']}}</td><td>{{o['date']}}</td></tr>{% else %}<tr><td colspan="5">Buyurtmalar yo‘q</td></tr>{% endfor %}</tbody></table></div></div><div class="card p-3"><h5>🏪 Hududimdagi do‘konlar va qarzdorlik</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Do‘kon</th><th>Hudud</th><th>Qarz</th></tr></thead><tbody>{% for sh in shops %}<tr><td>{{sh['name']}}</td><td>{{sh['territory'] or sh['region'] or '—'}}</td><td>{{'{:,.0f}'.format(sh['debt'] or 0)}} so‘m</td></tr>{% else %}<tr><td colspan="3">Do‘konlar yo‘q</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% if role_key == 'zavsklad' or role_key == 'sex' %}<div class="card p-3"><h5>📋 Ombor qoldiqlari</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Kategoriya</th></tr></thead><tbody>{% for p in products %}<tr><td>{{p['name']}}</td><td>{{p['stock']}}</td><td>{{p['category']}}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% if role_key == 'zavsklad' %}<div class="card p-3"><h5>🧾 Yig‘ish kutilayotgan buyurtmalar</h5>{% for o in orders %}<div class="border rounded p-2 mb-2"><b>#{{o['id']}} — {{o['shop_name']}}</b><div>{{o['items_text']}}</div><div>Jami: {{'{:,.0f}'.format(o['total_sum'] or 0)}} so‘m · {{o['status']}}</div>{% if o['status'] == 'Yangi' %}<form method="post" class="mt-2"><input type="hidden" name="action" value="status"><input type="hidden" name="order_id" value="{{o['id']}}"><input type="hidden" name="new_status" value="Otgruzka"><button class="btn btn-primary btn-sm">Yig‘ildi — ekspeditorga berish</button></form>{% endif %}</div>{% else %}<p>Yangi buyurtmalar yo‘q.</p>{% endfor %}</div>{% endif %}
+{% if role_key == 'ekspeditor' %}<div class="card p-3"><h5>🚚 Yetkazilishi kerak buyurtmalar</h5>{% for o in orders %}<div class="border rounded p-2 mb-2"><b>#{{o['id']}} — {{o['shop_name']}}</b><div>{{o['items_text']}}</div><div>Jami: {{'{:,.0f}'.format(o['total_sum'] or 0)}} so‘m · {{o['status']}}</div>{% if o['status'] in ['Yangi','Otgruzka'] %}<form method="post" class="mt-2"><input type="hidden" name="action" value="status"><input type="hidden" name="order_id" value="{{o['id']}}"><input type="hidden" name="new_status" value="Yetkazildi"><button class="btn btn-success btn-sm">Yetkazildi deb tasdiqlash</button></form>{% endif %}</div>{% else %}<p>Yetkaziladigan buyurtmalar yo‘q.</p>{% endfor %}</div><div class="card p-3"><h5>💰 To‘lov so‘rovlari</h5><p class="muted">To‘lovni rasmiylashtirish va tasdiqlashning mavjud botdagi tartibi saqlanadi.</p>{% for r in payments %}<div class="border-bottom py-2">{{r['shop_name']}} — {{'{:,.0f}'.format(r['amount'] or 0)}} so‘m · {{r['status']}} <small class="muted">{{r['date']}}</small></div>{% else %}<p>To‘lov so‘rovlari yo‘q.</p>{% endfor %}</div>{% endif %}
+<div class="text-center muted small mb-4">Xodim kabineti · Ma’lumotlar Telegram ID bo‘yicha filtrlanadi</div></main></body></html>
+"""
+
+@app.route('/staff_app/<int:tg_id>', methods=['GET', 'POST'])
+def staff_webapp(tg_id):
+    if not verify_staff_link(tg_id):
+        return "Havola yaroqsiz yoki muddati tugagan. Telegram botga qaytib, '🌐 Web kabinetim' tugmasini qayta bosing.", 403
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
+    if not user or not user['role'] or user['role'] == 'pending':
+        conn.close()
+        return 'Telegram foydalanuvchisi tasdiqlanmagan.', 403
+    role = user['role'] or ''
+    role_key = 'admin' if 'admin' in role else ('agent' if 'agent' in role else ('sex' if 'sex' in role else ('zavsklad' if 'zavsklad' in role else ('ekspeditor' if 'ekspeditor' in role else role))))
+    error = ''
+    if request.method == 'POST':
+        action = request.form.get('action')
+        order_id = safe_number(request.form.get('order_id'), 0, minimum=1)
+        new_status = request.form.get('new_status', '')
+        allowed = (role_key == 'zavsklad' and new_status == 'Otgruzka') or (role_key == 'ekspeditor' and new_status == 'Yetkazildi')
+        order = conn.execute('SELECT * FROM orders WHERE id = ?', (int(order_id),)).fetchone() if order_id else None
+        if action == 'status' and allowed and order:
+            if role_key == 'zavsklad' and order['status'] != 'Yangi':
+                error = 'Faqat Yangi holatdagi buyurtmani ekspeditorga berish mumkin.'
+            elif role_key == 'ekspeditor' and order['status'] not in ('Yangi', 'Otgruzka'):
+                error = 'Bu buyurtma yetkazish uchun mavjud emas.'
+            else:
+                old_status = order['status']
+                conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, int(order_id)))
+                conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (int(order_id), new_status, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                log_audit(conn, 'Buyurtma holati web kabinetdan o‘zgartirildi', 'order', int(order_id), f'{old_status} -> {new_status}; xodim={user["name"]}; tg_id={tg_id}')
+                if new_status == 'Yetkazildi':
+                    shop = conn.execute('SELECT debt FROM shops WHERE name = ?', (order['shop_name'],)).fetchone()
+                    if shop:
+                        conn.execute('UPDATE shops SET debt = COALESCE(debt,0) + ? WHERE name = ?', (safe_number(order['total_sum']), order['shop_name']))
+                conn.commit()
+        else:
+            error = 'Bu amal sizning rolingizga ruxsat etilmagan yoki buyurtma topilmadi.'
+    # Xodimlar faqat vazifasiga kerakli doiradagi buyurtmalarni ko‘radi.
+    if role_key == 'agent':
+        orders = conn.execute('SELECT * FROM orders WHERE agent_name = ? ORDER BY id DESC LIMIT 50', (user['name'],)).fetchall()
+        territory = user['territory'] or ''
+        if territory:
+            shops = conn.execute("SELECT * FROM shops WHERE territory = ? OR territory = '' ORDER BY name", (territory,)).fetchall()
+        else:
+            shops = conn.execute('SELECT * FROM shops ORDER BY name').fetchall()
+    elif role_key == 'zavsklad':
+        orders = conn.execute("SELECT * FROM orders WHERE status = 'Yangi' ORDER BY id DESC LIMIT 100").fetchall()
+        shops = []
+        territory = user['territory'] or ''
+    elif role_key == 'ekspeditor':
+        orders = conn.execute("SELECT * FROM orders WHERE status IN ('Yangi','Otgruzka') ORDER BY id DESC LIMIT 100").fetchall()
+        shops = []
+        territory = user['territory'] or ''
+    elif role_key == 'sex':
+        orders = []
+        shops = []
+        territory = user['territory'] or ''
+    else:
+        orders = conn.execute('SELECT * FROM orders ORDER BY id DESC LIMIT 50').fetchall()
+        shops = conn.execute('SELECT * FROM shops ORDER BY name').fetchall()
+        territory = user['territory'] or ''
+    products = conn.execute('SELECT * FROM products ORDER BY name').fetchall() if role_key in ('zavsklad','sex') else []
+    payments = conn.execute('SELECT * FROM payment_requests WHERE ekspeditor_name = ? ORDER BY id DESC LIMIT 30', (user['name'],)).fetchall() if role_key == 'ekspeditor' else []
+    conn.close()
+    role_labels = {'agent':'Agent kabineti','zavsklad':'Zavsklad kabineti','ekspeditor':'Ekspeditor kabineti','sex':'Sex xodimi kabineti','admin':'Admin kabineti'}
+    return render_template_string(STAFF_WEB_TEMPLATE, name=user['name'], tg_id=tg_id, role_key=role_key, role_label=role_labels.get(role_key, 'Xodim kabineti'), territory=territory, orders=orders, shops=shops, products=products, payments=payments, error=error, role_has_agent=(role_key == 'agent'))
 
 
 AGENT_WEBAPP_TEMPLATE = """
@@ -2061,6 +2236,13 @@ AGENT_WEBAPP_TEMPLATE = """
             </table>
         </div>
     </div>
+
+    <div class="card-mobile">
+        <h6 class="fw-bold mb-3">🏪 Hududimdagi do‘konlar va qarzdorlik</h6>
+        <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:12px"><thead><tr><th>Do‘kon</th><th>Hudud</th><th>Qarz</th></tr></thead><tbody>
+        {% for s in shops %}<tr><td>{{ s['name'] }}</td><td>{{ s['territory'] or s['region'] or '—' }}</td><td><b>{{ "{:,.0f}".format(s['debt'] or 0) }} so‘m</b></td></tr>{% else %}<tr><td colspan="3">Do‘konlar yo‘q</td></tr>{% endfor %}
+        </tbody></table></div>
+    </div>
 </div>
 <script>
     function addMiniRow() {
@@ -2078,6 +2260,8 @@ AGENT_WEBAPP_TEMPLATE = """
 
 @app.route('/agent_app/<int:tg_id>', methods=['GET', 'POST'])
 def agent_webapp(tg_id):
+    if not verify_staff_link(tg_id):
+        return redirect(make_staff_web_url(tg_id))
     conn = get_db_connection()
     user = conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
     if not user:
@@ -2132,6 +2316,7 @@ def agent_webapp(tg_id):
             (shop_name, agent_name, total_sum, items_text, bugun, price_type, comment, cost_total),
         )
         order_id = cursor.lastrowid
+        log_audit(conn, 'Agent web kabinetidan buyurtma yaratildi', 'order', order_id, f'agent={agent_name}; do‘kon={shop_name}; summa={total_sum}; telegram_id={tg_id}')
         conn.commit()
         
         try:
@@ -2176,7 +2361,7 @@ def start_order_choice(message):
     markup.row(types.KeyboardButton('📅 Posesheniya (Tashrif kunlari)'), types.KeyboardButton('🌐 Obshiy zakaz (Barcha do\'konlar)'))
     
     web_markup = types.InlineKeyboardMarkup()
-    web_markup.add(types.InlineKeyboardButton("🌐 Web App orqali buyurtma berish (Qulay)", web_app=types.WebAppInfo(url=f"https://xoji-aka-factory.onrender.com/agent_app/{tg_id}")))
+    web_markup.add(types.InlineKeyboardButton("🌐 Web App orqali buyurtma berish (Qulay)", web_app=types.WebAppInfo(url=make_staff_web_url(tg_id))))
     
     markup.add(types.KeyboardButton('🔄 Rolni almashtirish (Sex / Agent / Zavsklad / Ekspeditor)'))
     bot.send_message(message.chat.id, "Buyurtma berish turini tanlang (yoki quyidagi Mini App orqali o'ting):", reply_markup=markup)
@@ -3454,9 +3639,30 @@ function addEditModalRow(selectedProd = '', qtyVal = '1') {
 </html>
 """
 
+@app.after_request
+def audit_web_post(response):
+    # Muhim web amallari uchun umumiy iz: endpoint, natija va parolsiz forma maydonlari.
+    try:
+        if request.method == 'POST' and request.endpoint not in ('login',) and response.status_code < 500:
+            fields = {}
+            for key in request.form.keys():
+                if any(secret in key.lower() for secret in ('password', 'token', 'secret', 'sig')):
+                    continue
+                values = request.form.getlist(key)
+                fields[key] = ','.join(values)[:160]
+            conn = get_db_connection()
+            conn.execute('INSERT INTO audit_log (actor, action, entity, entity_id, details, date) VALUES (?, ?, ?, ?, ?, ?)',
+                (current_actor(), 'Web POST amali', request.endpoint or request.path, '', str(fields)[:1000] + f'; HTTP={response.status_code}', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            conn.commit()
+            conn.close()
+    except Exception:
+        app.logger.exception('Web amalini audit jurnaliga yozib bo‘lmadi')
+    return response
+
+
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static', 'agent_webapp']
+    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
@@ -3667,7 +3873,7 @@ def web_add_order():
   except Exception as e:
     print('Web buyurtmani guruhga yuborish xatosi:', e)
 
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/update_status/<int:order_id>', methods=['POST'])
@@ -3699,7 +3905,7 @@ def update_status(order_id):
   conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (order_id, new_status, bugun))
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -3711,6 +3917,13 @@ def login():
             session.clear()
             session['logged_in'] = True
             session['username'] = username
+            try:
+                conn = get_db_connection()
+                log_audit(conn, 'Web panelga kirish', 'auth', username, 'Admin login muvaffaqiyatli')
+                conn.commit()
+                conn.close()
+            except Exception:
+                app.logger.exception('Kirish auditini yozishda xato')
             return redirect(url_for('index'))
         return "Login yoki parol xato! <a href='/login'>Qaytadan urinish</a>"
     return '''
@@ -3837,7 +4050,7 @@ def add_stock():
 
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/pay_debt', methods=['POST'])
@@ -3859,7 +4072,7 @@ def pay_debt():
     )
     conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/add_income', methods=['POST'])
@@ -3872,7 +4085,7 @@ def add_income():
   conn.execute('INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)', (source, amount, today))
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/add_expense', methods=['POST'])
@@ -3885,7 +4098,7 @@ def add_expense():
   conn.execute('INSERT INTO expenses (reason, amount, date) VALUES (?, ?, ?)', (reason, amount, today))
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/add_advance', methods=['POST'])
@@ -3899,7 +4112,7 @@ def add_advance():
   conn.execute('INSERT INTO advances (worker_name, amount, date) VALUES (?, ?, ?)', (worker_name, amount, today))
   conn.commit()
   conn.close()
-  return redirect(url_for('operator_dashboard'))
+  return redirect(url_for('index'))
 
 
 @app.route('/logout')
@@ -3931,6 +4144,31 @@ def export_excel():
   )
 
 
+
+@app.errorhandler(500)
+def handle_internal_server_error(error):
+    # Batafsil xato server terminalida ko'rinadi; foydalanuvchiga ichki tafsilotlarni ko'rsatmaymiz.
+    app.logger.exception("Web panelda kutilmagan 500 xatosi: %s", error)
+    if session.get('logged_in'):
+        back_url = url_for('index')
+        back_label = "Boshqaruv paneliga qaytish"
+    else:
+        back_url = url_for('login')
+        back_label = "Login sahifasiga qaytish"
+    return (
+        "<!doctype html><html lang='uz'><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Xatolik</title><body style='font-family:Arial,sans-serif;max-width:680px;"
+        "margin:70px auto;padding:24px;color:#222'>"
+        "<h2>Amalni bajarishda xatolik yuz berdi</h2>"
+        "<p>Ma'lumotlar saqlanmagan bo'lishi mumkin. Boshqaruv paneliga qayting va amalni yana tekshiring.</p>"
+        f"<p><a href='{back_url}'>{back_label}</a></p>"
+        "<p style='color:#666;font-size:13px'>Agar xato takrorlansa, server terminalidagi xabarni tekshiring.</p>"
+        "</body></html>",
+        500,
+    )
+
+
 def run_bot():
     while True:
         try:
@@ -3943,6 +4181,8 @@ def run_bot():
 
 if __name__ == '__main__':
     init_web_db()
+    create_database_backup()
+    threading.Thread(target=backup_scheduler, daemon=True).start()
 
     if not ADMIN_PASSWORD:
         print("DIQQAT: ADMIN_PASSWORD sozlanmagan. Admin kirishi uchun PowerShell’da $env:ADMIN_PASSWORD='kuchli_parol' deb belgilang.")
