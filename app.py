@@ -75,7 +75,10 @@ if IMAGEKIT_PRIVATE_KEY:
     imagekit = ImageKit(
         private_key=IMAGEKIT_PRIVATE_KEY
     )
-
+app.logger.info(
+    "ImageKit private key mavjud: %s",
+    bool(IMAGEKIT_PRIVATE_KEY)
+)
 
 def imagekitga_yuklash(file_obj):
     """Rasmni ImageKit'ga yuklaydi va URL manzilini qaytaradi."""
