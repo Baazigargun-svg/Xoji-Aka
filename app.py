@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import io
 import threading
 import time
@@ -29,7 +29,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
@@ -243,6 +243,8 @@ def init_web_db():
       ("ALTER TABLE shops ADD COLUMN inventory TEXT DEFAULT ''", "inventory"),
       ("ALTER TABLE shops ADD COLUMN territory TEXT DEFAULT ''", "territory"),
       ("ALTER TABLE shops ADD COLUMN firm TEXT DEFAULT ''", "firm"),
+      ("ALTER TABLE shops ADD COLUMN last_visit TEXT DEFAULT ''", "last_visit"),
+      ("ALTER TABLE shops ADD COLUMN next_visit_date TEXT DEFAULT ''", "next_visit_date"),
       ("ALTER TABLE users ADD COLUMN territory TEXT DEFAULT ''", "territory"),
       ("ALTER TABLE users ADD COLUMN salary_percent REAL DEFAULT 5", "salary_percent"),
       ("ALTER TABLE orders ADD COLUMN discount REAL DEFAULT 0", "discount"),
@@ -2238,9 +2240,9 @@ AGENT_WEBAPP_TEMPLATE = """
     </div>
 
     <div class="card-mobile">
-        <h6 class="fw-bold mb-3">🏪 Hududimdagi do‘konlar va qarzdorlik</h6>
-        <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:12px"><thead><tr><th>Do‘kon</th><th>Hudud</th><th>Qarz</th></tr></thead><tbody>
-        {% for s in shops %}<tr><td>{{ s['name'] }}</td><td>{{ s['territory'] or s['region'] or '—' }}</td><td><b>{{ "{:,.0f}".format(s['debt'] or 0) }} so‘m</b></td></tr>{% else %}<tr><td colspan="3">Do‘konlar yo‘q</td></tr>{% endfor %}
+        <h6 class="fw-bold mb-3">🏪 Hududimdagi do‘konlar, qarz va tashrif rejasi</h6>
+        <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:12px"><thead><tr><th>Do‘kon</th><th>Qarz</th><th>Keyingi tashrif</th><th>Amal</th></tr></thead><tbody>
+        {% for s in shops %}<tr><td><b>{{ s['name'] }}</b><br><small>{{ s['territory'] or s['region'] or '—' }}</small><br><small class="text-muted">Oxirgi: {{ s['last_visit'] or 'qayd yo‘q' }}</small></td><td><b>{{ "{:,.0f}".format(s['debt'] or 0) }} so‘m</b></td><td>{% if s['next_visit_date'] %}<span class="badge {% if s['next_visit_date'] < today_iso %}bg-danger{% elif s['next_visit_date'] == today_iso %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ s['next_visit_date'] }}</span>{% else %}<span class="badge bg-secondary">Reja yo‘q</span>{% endif %}</td><td><form method="POST" class="d-flex gap-1 align-items-center"><input type="hidden" name="action" value="mark_visit"><input type="hidden" name="shop_id" value="{{ s['id'] }}"><select name="interval_days" class="form-select form-select-sm" style="min-width:82px"><option value="1">1 kun</option><option value="3">3 kun</option><option value="7" selected>7 kun</option><option value="14">14 kun</option></select><button class="btn btn-sm btn-success text-nowrap" type="submit">Tashrif qildim</button></form></td></tr>{% else %}<tr><td colspan="4">Do‘konlar yo‘q</td></tr>{% endfor %}
         </tbody></table></div>
     </div>
 </div>
@@ -2272,6 +2274,23 @@ def agent_webapp(tg_id):
     agent_territory = user['territory'] or ''
     
     if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'mark_visit':
+            shop_id = int(safe_number(request.form.get('shop_id'), 0, minimum=1))
+            interval_days = int(safe_number(request.form.get('interval_days', 7), 7, minimum=1, maximum=60))
+            shop = conn.execute('SELECT * FROM shops WHERE id = ?', (shop_id,)).fetchone()
+            allowed_shop = bool(shop) and (not agent_territory or not shop['territory'] or shop['territory'] == agent_territory)
+            if not allowed_shop:
+                conn.close()
+                return 'Bu do‘kon sizning hududingizga biriktirilmagan.', 403
+            now_dt = datetime.now()
+            last_visit = now_dt.strftime('%Y-%m-%d %H:%M')
+            next_visit = (now_dt + timedelta(days=interval_days)).strftime('%Y-%m-%d')
+            conn.execute('UPDATE shops SET last_visit = ?, next_visit_date = ? WHERE id = ?', (last_visit, next_visit, shop_id))
+            log_audit(conn, 'Agent do‘konga tashrifni qayd etdi', 'shop', shop_id, f"agent={agent_name}; tg_id={tg_id}; keyingi_tashrif={next_visit}")
+            conn.commit()
+            conn.close()
+            return redirect(url_for('agent_webapp', tg_id=tg_id))
         shop_name = request.form.get('shop_name')
         price_type = request.form.get('price_type', 'optom')
         comment = request.form.get('comment', '')
@@ -2350,7 +2369,8 @@ def agent_webapp(tg_id):
         agent_territory=agent_territory,
         shops=shops,
         products=products,
-        my_orders=my_orders
+        my_orders=my_orders,
+        today_iso=datetime.now().strftime('%Y-%m-%d')
     )
 
 
@@ -3192,8 +3212,8 @@ HTML_TEMPLATE = """
                                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick='openEditShopModal({{ s["id"]|tojson }}, {{ s["name"]|tojson }}, {{ s["phone"]|tojson }}, {{ s["region"]|tojson }}, {{ s["landmark"]|tojson }}, {{ s["visit_days"]|tojson }}, {{ s["inventory"]|tojson }}, {{ s["territory"]|tojson }})'><i class="bi bi-pencil"></i> Tahrir</button>
                                                     <form action="/pay_debt" method="POST" class="d-inline-flex gap-1 mt-1">
                                                         <input type="hidden" name="shop_id" value="{{ s['id'] }}">
-                                                        <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
-                                                        <button type="submit" class="btn btn-sm btn-success">Prixod</button>
+                                                        <input type="number" name="amount" class="form-control form-control-sm" placeholder="To‘lov (+) / qarz (-)" title="Musbat summa — to‘lov; manfiy summa — eski qarzni qo‘lda kiritish" required style="width: 145px;">
+                                                        <button type="submit" class="btn btn-sm btn-success" title="Musbat: to‘lov; manfiy: qarz kiritish">Kiritish</button>
                                                     </form>
                                                 </td>
                                             </tr>
@@ -3344,6 +3364,29 @@ HTML_TEMPLATE = """
                             <div class="col-md-3 bg-light p-3 rounded"><small class="text-muted">Umumiy Rasxodlar (Chiqim)</small><h4 class="fw-bold text-danger mb-0">{{ "{:,.0f}".format(total_expense) }} so'm</h4></div>
                             <div class="col-md-3 bg-success bg-opacity-10 p-3 rounded border border-success"><small class="text-success fw-bold">Sof Foyda</small><h4 class="fw-bold text-success mb-0">{{ "{:,.0f}".format(net_profit) }} so'm</h4></div>
                         </div>
+                    </div>
+                    <div class="card-glass p-4 mb-4">
+                        <h5 class="fw-bold mb-3"><i class="bi bi-box-seam me-2 text-primary"></i>Ombordagi Tovarlarning Umumiy Qiymati</h5>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-3"><div class="p-3 rounded bg-light h-100"><small class="text-muted">Kirim narxida (tannarx)</small><h4 class="fw-bold text-secondary mb-0">{{ "{:,.0f}".format(stock_cost_value) }} so'm</h4></div></div>
+                            <div class="col-md-3"><div class="p-3 rounded bg-primary bg-opacity-10 h-100"><small class="text-primary">Sotish narxida (optom)</small><h4 class="fw-bold text-primary mb-0">{{ "{:,.0f}".format(stock_sale_value) }} so'm</h4></div></div>
+                            <div class="col-md-3"><div class="p-3 rounded bg-info bg-opacity-10 h-100"><small class="text-info">Sotish narxida (chakana)</small><h4 class="fw-bold text-info mb-0">{{ "{:,.0f}".format(stock_retail_value) }} so'm</h4></div></div>
+                            <div class="col-md-3"><div class="p-3 rounded bg-success bg-opacity-10 h-100"><small class="text-success">Taxminiy yalpi foyda (optom)</small><h4 class="fw-bold text-success mb-0">{{ "{:,.0f}".format(stock_sale_value - stock_cost_value) }} so'm</h4></div></div>
+                        </div>
+                        <p class="small text-muted mb-0">Qiymat amaldagi qoldiq × tannarx yoki optom narxi bo‘yicha hisoblanadi.</p>
+                    </div>
+                    <div class="card-glass p-4 mb-4">
+                        <h5 class="fw-bold mb-3"><i class="bi bi-percent me-2 text-warning"></i>Har Bir Tovarning Ustama Foizi</h5>
+                        <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead><tr><th>Mahsulot</th><th>Qoldiq</th><th>Tannarx</th><th>Optom</th><th>Chakana</th><th>Ustama optom</th><th>Ustama chakana</th></tr></thead><tbody>
+                        {% for p in product_margin_rows %}<tr><td class="fw-bold">{{ p.name }}</td><td>{{ "{:,.2f}".format(p.stock) }}</td><td>{{ "{:,.0f}".format(p.cost) }}</td><td>{{ "{:,.0f}".format(p.optom) }}</td><td>{{ "{:,.0f}".format(p.chakana) }}</td><td><span class="badge {% if p.optom_percent < 0 %}bg-danger{% elif p.optom_percent < 10 %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ "{:.1f}".format(p.optom_percent) }}%</span></td><td><span class="badge {% if p.chakana_percent < 0 %}bg-danger{% elif p.chakana_percent < 10 %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ "{:.1f}".format(p.chakana_percent) }}%</span></td></tr>{% else %}<tr><td colspan="7">Mahsulotlar yo‘q.</td></tr>{% endfor %}
+                        </tbody></table></div><small class="text-muted">Ustama = (sotish narxi − tannarx) ÷ tannarx × 100. Tannarx 0 bo‘lsa foiz 0% ko‘rsatiladi.</small>
+                    </div>
+                    <div class="card-glass p-4 mb-4">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><h5 class="fw-bold mb-0"><i class="bi bi-calendar-check me-2 text-danger"></i>AKB / Do‘konlarga Tashrif Nazorati</h5><span class="badge bg-danger">Kechikkan: {{ overdue_visits_count }}</span></div>
+                        <p class="small text-muted">Agent tashrifdan so‘ng Telegram web-kabinetida “Tashrif qildim” tugmasini bosib, keyingi tashrif muddatini belgilaydi.</p>
+                        <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead><tr><th>Do‘kon</th><th>Hudud</th><th>Reja kunlari</th><th>Oxirgi tashrif</th><th>Keyingi tashrif</th><th>Holat</th></tr></thead><tbody>
+                        {% for v in visit_alerts %}<tr><td class="fw-bold">{{ v.name }}</td><td>{{ v.territory or v.region or '—' }}</td><td>{{ v.visit_days or '—' }}</td><td>{{ v.last_visit or 'Hali qayd yo‘q' }}</td><td>{{ v.next_visit_date or 'Belgilanmagan' }}</td><td>{% if v.visit_status == 'Kechikkan' %}<span class="badge bg-danger">Kechikkan</span>{% elif v.visit_status == 'Bugun' %}<span class="badge bg-warning text-dark">Bugun borish kerak</span>{% elif v.visit_status == 'Reja yo‘q' %}<span class="badge bg-secondary">Reja yo‘q</span>{% else %}<span class="badge bg-success">Rejada</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6">Do‘konlar ro‘yxati bo‘sh.</td></tr>{% endfor %}
+                        </tbody></table></div>
                     </div>
                 </div>
             </div>
@@ -3676,6 +3719,7 @@ def operator_dashboard():
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
   product_incomes_history = conn.execute('SELECT * FROM product_incomes ORDER BY id DESC LIMIT 50').fetchall()
+  today_iso = datetime.now().strftime('%Y-%m-%d')
 
   orders = conn.execute("SELECT * FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? ORDER BY id DESC", (start_date, end_date)).fetchall()
 
@@ -3778,6 +3822,41 @@ def operator_dashboard():
 
   # Sof foyda = Umumiy tushum - Sotilgan tovarlar tannarxi - Umumiy chiqimlar
   net_profit = total_revenue - total_cost - exp_sum
+
+  stock_cost_value = 0.0
+  stock_sale_value = 0.0
+  stock_retail_value = 0.0
+  product_margin_rows = []
+  for prod in products:
+      qty = safe_number(prod['stock'])
+      cost = safe_number(prod['cost_price'])
+      optom = safe_number(prod['optom_price'])
+      chakana = safe_number(prod['chakana_price']) or optom
+      stock_cost_value += qty * cost
+      stock_sale_value += qty * optom
+      stock_retail_value += qty * chakana
+      optom_percent = ((optom - cost) / cost * 100) if cost > 0 else 0.0
+      chakana_percent = ((chakana - cost) / cost * 100) if cost > 0 else 0.0
+      product_margin_rows.append({'name': prod['name'], 'stock': qty, 'cost': cost, 'optom': optom, 'chakana': chakana, 'optom_percent': optom_percent, 'chakana_percent': chakana_percent})
+  product_margin_rows.sort(key=lambda x: x['name'].casefold())
+
+  visit_alerts = []
+  for shop_row in shops:
+      shop_dict = dict(shop_row)
+      next_visit = (shop_dict.get('next_visit_date') or '').strip()
+      if not next_visit:
+          visit_status = 'Reja yo‘q'
+      elif next_visit < today_iso:
+          visit_status = 'Kechikkan'
+      elif next_visit == today_iso:
+          visit_status = 'Bugun'
+      else:
+          visit_status = 'Rejada'
+      shop_dict['visit_status'] = visit_status
+      visit_alerts.append(shop_dict)
+  visit_priority = {'Kechikkan': 0, 'Bugun': 1, 'Reja yo‘q': 2, 'Rejada': 3}
+  visit_alerts.sort(key=lambda x: (visit_priority.get(x['visit_status'], 4), x.get('next_visit_date') or '9999-99-99', (x.get('name') or '').casefold()))
+  overdue_visits_count = sum(1 for v in visit_alerts if v['visit_status'] == 'Kechikkan')
   conn.close()
 
   return render_template_string(
@@ -3805,6 +3884,13 @@ def operator_dashboard():
       advances_list=advances_list,
       agents_salary_data=agents_salary_data,
       product_incomes_history=product_incomes_history,
+      stock_cost_value=stock_cost_value,
+      stock_sale_value=stock_sale_value,
+      stock_retail_value=stock_retail_value,
+      product_margin_rows=product_margin_rows,
+      visit_alerts=visit_alerts,
+      overdue_visits_count=overdue_visits_count,
+      today_iso=today_iso,
   )
 
 
@@ -4055,22 +4141,41 @@ def add_stock():
 
 @app.route('/pay_debt', methods=['POST'])
 def pay_debt():
+  """Musbat summa — qarz to'lovi; manfiy summa — qo'lda eski qarz kiritish."""
   shop_id = request.form.get('shop_id')
-  amount = safe_number(request.form.get('amount', 0), minimum=0)
-  if amount <= 0:
-    return 'To‘lov miqdori noldan katta bo‘lishi kerak.', 400
-  today = datetime.now().strftime('%Y-%m-%d %H:%M')
+  raw_amount = str(request.form.get('amount', '')).strip().replace(' ', '').replace(',', '.')
+  try:
+    amount = float(raw_amount)
+    if amount != amount or amount in (float('inf'), float('-inf')):
+      raise ValueError('Noto‘g‘ri summa')
+  except (TypeError, ValueError):
+    return 'Summa raqam ko‘rinishida kiritilishi kerak.', 400
+  if amount == 0:
+    return 'Summa 0 bo‘lmasligi kerak. To‘lov uchun musbat, eski qarzni kiritish uchun manfiy summa yozing.', 400
 
+  today = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
   conn = get_db_connection()
-  shop = conn.execute('SELECT name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
-  if shop:
-    curr_debt = shop['debt'] if shop['debt'] is not None else 0
-    conn.execute('UPDATE shops SET debt = ? WHERE name = ?', (curr_debt - amount, shop['name']))
+  shop = conn.execute('SELECT id, name, debt FROM shops WHERE id = ?', (shop_id,)).fetchone()
+  if not shop:
+    conn.close()
+    return 'Do‘kon topilmadi.', 404
+
+  curr_debt = float(shop['debt'] or 0)
+  new_debt = curr_debt - amount
+  conn.execute('UPDATE shops SET debt = ? WHERE id = ?', (new_debt, shop['id']))
+  if amount > 0:
+    # Haqiqiy to'lov: qarz kamayadi va tushumga yoziladi.
     conn.execute(
         'INSERT INTO incomes (source, amount, date) VALUES (?, ?, ?)',
-        (f"Qarz to'lovi ({shop['name']})", amount, today),
+        (f"Qarz to‘lovi ({shop['name']})", amount, today),
     )
-    conn.commit()
+    log_audit(conn, 'Do‘kon qarzidan to‘lov ayirildi', 'shop', shop['id'],
+              f"do‘kon={shop['name']}; to‘lov={amount:.2f}; qarz {curr_debt:.2f} -> {new_debt:.2f}")
+  else:
+    # Manfiy summa daromad emas: mavjud/oldingi qarzni qo'lda kiritish.
+    log_audit(conn, 'Eski qarz qo‘lda kiritildi', 'shop', shop['id'],
+              f"do‘kon={shop['name']}; kiritilgan qarz={abs(amount):.2f}; qarz {curr_debt:.2f} -> {new_debt:.2f}")
+  conn.commit()
   conn.close()
   return redirect(url_for('index'))
 
@@ -4179,6 +4284,44 @@ def run_bot():
             time.sleep(5)
 
 
+def run_visit_reminders():
+    """Har kuni Toshkent vaqti bilan 08:00 dan keyin agentlarga muddati kelgan AKB tashriflarini eslatadi."""
+    last_sent_day = None
+    tashkent_tz = timezone(timedelta(hours=5))
+    while True:
+        try:
+            now = datetime.now(tashkent_tz)
+            today = now.strftime('%Y-%m-%d')
+            if now.hour >= 8 and now.hour < 20 and last_sent_day != today:
+                conn = get_db_connection()
+                agents = conn.execute("SELECT tg_id, name, territory FROM users WHERE role LIKE '%agent%'").fetchall()
+                due_shops = conn.execute(
+                    "SELECT name, territory, region, debt, next_visit_date FROM shops "
+                    "WHERE COALESCE(next_visit_date, '') != '' AND next_visit_date <= ? "
+                    "ORDER BY next_visit_date, name", (today,)
+                ).fetchall()
+                conn.close()
+                for agent in agents:
+                    territory = (agent['territory'] or '').strip()
+                    relevant = [sh for sh in due_shops if (not territory or not sh['territory'] or sh['territory'] == territory)]
+                    if not relevant:
+                        continue
+                    lines = [f"📅 <b>AKB TASHRIF ESLATMASI</b>", f"👤 Agent: <b>{agent['name']}</b>", ""]
+                    for sh in relevant[:30]:
+                        due_date = sh['next_visit_date'] or ''
+                        status = '🔴 KECHIKKAN' if due_date < today else '🟡 BUGUN'
+                        lines.append(f"{status} — <b>{sh['name']}</b> | {sh['territory'] or sh['region'] or 'Hudud belgilanmagan'} | Qarz: {safe_number(sh['debt']):,.0f} so‘m | Reja: {due_date}")
+                    lines.append("\nWeb kabinetda tashrifni qayd etib, keyingi tashrif muddatini belgilang.")
+                    try:
+                        bot.send_message(int(agent['tg_id']), '\n'.join(lines), parse_mode='HTML')
+                    except Exception as send_error:
+                        app.logger.warning('AKB eslatmasi yuborilmadi (%s): %s', agent['tg_id'], send_error)
+                last_sent_day = today
+        except Exception:
+            app.logger.exception('AKB tashrif eslatmasi xatosi')
+        time.sleep(45)
+
+
 if __name__ == '__main__':
     init_web_db()
     create_database_backup()
@@ -4190,6 +4333,7 @@ if __name__ == '__main__':
     if BOT_TOKEN and ':' in BOT_TOKEN and 'PLACEHOLDER' not in BOT_TOKEN:
         bot_thread = threading.Thread(target=run_bot, daemon=True)
         bot_thread.start()
+        threading.Thread(target=run_visit_reminders, daemon=True).start()
     else:
         print('DIQQAT: BOT_TOKEN sozlanmagan. Web-panel ishlaydi, Telegram bot polling ishga tushmaydi.')
 
