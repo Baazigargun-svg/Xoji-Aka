@@ -8,6 +8,8 @@ import logging
 import hmac
 import hashlib
 import shutil
+import uuid
+from imagekitio import ImageKit
 from werkzeug.utils import secure_filename
 from urllib.parse import urlencode
 from logging.handlers import RotatingFileHandler
@@ -63,6 +65,47 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CATALOG_UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_CATALOG_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+# ===== IMAGEKIT SOZLAMALARI =====
+IMAGEKIT_PRIVATE_KEY = os.environ.get('IMAGEKIT_PRIVATE_KEY')
+IMAGEKIT_URL_ENDPOINT = os.environ.get('IMAGEKIT_URL_ENDPOINT')
+
+imagekit = None
+
+if IMAGEKIT_PRIVATE_KEY:
+    imagekit = ImageKit(
+        private_key=IMAGEKIT_PRIVATE_KEY
+    )
+
+
+def imagekitga_yuklash(file_obj):
+    """Rasmni ImageKit'ga yuklaydi va URL manzilini qaytaradi."""
+    if imagekit is None:
+        raise RuntimeError(
+            "ImageKit sozlanmagan. Render Environment sozlamalarini tekshiring."
+        )
+
+    if not file_obj or not file_obj.filename:
+        raise ValueError("Rasm tanlanmagan.")
+
+    filename = secure_filename(file_obj.filename)
+    extension = os.path.splitext(filename)[1].lower()
+
+    if extension not in {'.jpg', '.jpeg', '.png', '.webp'}:
+        raise ValueError("Faqat JPG, JPEG, PNG yoki WEBP rasmlar mumkin.")
+
+    result = imagekit.files.upload(
+        file=file_obj.read(),
+        file_name=f"{uuid.uuid4().hex}{extension}",
+        folder="/xoji-aka-products"
+    )
+
+    if not result.url:
+        raise RuntimeError("ImageKit rasm manzilini qaytarmadi.")
+
+    return result.url
+
+
+# ===== IMAGEKIT KODI TUGADI =====
 user_steps = {}
 
 
@@ -4129,27 +4172,67 @@ def healthz():
 
 @app.route('/catalog-image/<path:filename>')
 def catalog_image(filename):
-  # Rasm fayllari agentlar ko‘rishi uchun ochiq; katalogni tahrirlash esa login bilan himoyalangan.
-  return send_from_directory(CATALOG_UPLOAD_FOLDER, os.path.basename(filename))
+  # ImageKit URL bo‘lsa, to‘g‘ridan-to‘g‘ri shu rasmga yo‘naltiramiz.
+  if filename.startswith('https://') or filename.startswith('http://'):
+    return redirect(filename)
+
+  # Eski, mahalliy papkada saqlangan rasmlar ham ishlashda davom etadi.
+  return send_from_directory(
+      CATALOG_UPLOAD_FOLDER,
+      os.path.basename(filename)
+  )
 
 
-@app.route('/catalog_add', methods=['POST'])
+ @app.route('/catalog_add', methods=['POST'])
 def catalog_add():
   name = (request.form.get('name') or '').strip()
   description = (request.form.get('description') or '').strip()
   price = safe_number(request.form.get('price'), -1)
   image = request.files.get('image')
-  if not name or price < 0 or not image or not image.filename or not allowed_catalog_file(image.filename):
+
+  if (
+      not name
+      or price < 0
+      or not image
+      or not image.filename
+      or not allowed_catalog_file(image.filename)
+  ):
     return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
-  ext = image.filename.rsplit('.', 1)[1].lower()
-  filename = secure_filename(f"catalog_{int(time.time() * 1000)}.{ext}")
-  image.save(os.path.join(CATALOG_UPLOAD_FOLDER, filename))
-  conn = get_db_connection()
-  conn.execute('INSERT INTO catalog_items (name, price, description, image_filename, active, created_at) VALUES (?, ?, ?, ?, 1, ?)', (name, price, description, filename, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-  log_audit(conn, 'Katalogga mahsulot qo‘shildi', 'catalog', filename, f'nomi={name}; narx={price}')
-  conn.commit()
-  conn.close()
-  return redirect(url_for('index'))
+
+  try:
+    # Rasmni ImageKit serveriga yuklash
+    image_url = imagekitga_yuklash(image)
+
+    conn = get_db_connection()
+    conn.execute(
+      '''INSERT INTO catalog_items
+      (name, price, description, image_filename, active, created_at)
+      VALUES (?, ?, ?, ?, 1, ?)''',
+      (
+        name,
+        price,
+        description,
+        image_url,
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+      )
+    )
+
+    log_audit(
+      conn,
+      'Katalogga mahsulot qo‘shildi',
+      'catalog',
+      image_url,
+      f'nomi={name}; narx={price}'
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('index'))
+
+  except Exception as e:
+    app.logger.exception('Katalog rasmi yuklashda xato: %s', e)
+    return 'Rasmni yuklashda xatolik yuz berdi. Server logini tekshiring.', 500
 
 
 @app.route('/catalog_delete/<int:item_id>', methods=['POST'])
@@ -4162,10 +4245,19 @@ def catalog_delete(item_id):
     conn.commit()
   conn.close()
   if item and item['image_filename']:
-    try:
-      os.remove(os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(item['image_filename'])))
-    except OSError:
-      pass
+    stored_image = item['image_filename']
+    # Faqat eski mahalliy fayllarni o'chiramiz.
+    # ImageKit URL'lariga tegmaymiz.
+    if not stored_image.startswith(('https://', 'http://')):
+      try:
+        os.remove(
+          os.path.join(
+            CATALOG_UPLOAD_FOLDER,
+            os.path.basename(stored_image)
+          )
+        )
+      except OSError:
+        pass
   return redirect(url_for('index'))
 
 
