@@ -4184,6 +4184,7 @@ def catalog_image(filename):
 
 
 
+
 @app.route('/catalog_add', methods=['POST'])
 def catalog_add():
     name = (request.form.get('name') or '').strip()
@@ -4191,50 +4192,53 @@ def catalog_add():
     price = safe_number(request.form.get('price'), -1)
     image = request.files.get('image')
 
+    if (
+        not name
+        or price < 0
+        or not image
+        or not image.filename
+        or not allowed_catalog_file(image.filename)
+    ):
+        return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
 
-  if (
-      not name
-      or price < 0
-      or not image
-      or not image.filename
-      or not allowed_catalog_file(image.filename)
-  ):
-    return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
+    conn = None
+    try:
+        image_url = imagekitga_yuklash(image)
 
-  try:
-    # Rasmni ImageKit serveriga yuklash
-    image_url = imagekitga_yuklash(image)
+        conn = get_db_connection()
+        conn.execute(
+            '''INSERT INTO catalog_items
+            (name, price, description, image_filename, active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)''',
+            (
+                name,
+                price,
+                description,
+                image_url,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            )
+        )
 
-    conn = get_db_connection()
-    conn.execute(
-      '''INSERT INTO catalog_items
-      (name, price, description, image_filename, active, created_at)
-      VALUES (?, ?, ?, ?, 1, ?)''',
-      (
-        name,
-        price,
-        description,
-        image_url,
-        datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-      )
-    )
+        log_audit(
+            conn,
+            'Katalogga mahsulot qo‘shildi',
+            'catalog',
+            image_url,
+            f'nomi={name}; narx={price}'
+        )
 
-    log_audit(
-      conn,
-      'Katalogga mahsulot qo‘shildi',
-      'catalog',
-      image_url,
-      f'nomi={name}; narx={price}'
-    )
+        conn.commit()
+        return redirect(url_for('index'))
 
-    conn.commit()
-    conn.close()
+    except Exception:
+        if conn is not None:
+            conn.rollback()
+        app.logger.exception('Katalog rasmi yuklashda xato')
+        return 'Rasmni yuklashda xatolik yuz berdi. Render loglarini tekshiring.', 500
 
-    return redirect(url_for('index'))
-
-  except Exception as e:
-    app.logger.exception('Katalog rasmi yuklashda xato: %s', e)
-    return 'Rasmni yuklashda xatolik yuz berdi. Server logini tekshiring.', 500
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 @app.route('/catalog_delete/<int:item_id>', methods=['POST'])
