@@ -32,13 +32,13 @@ SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 bot = telebot.TeleBot(BOT_TOKEN or "000000:PLACEHOLDER_TOKEN")
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_NAME = os.environ.get('DB_NAME', 'xoji_aka_factory.db')  # Eski bazani saqlash uchun nisbiy yo‘l odati saqlandi
+DB_NAME = os.environ.get('DB_NAME', os.path.join(BASE_DIR, 'xoji_aka_factory.db'))  # Standart holatda aynan shu fayl yonidagi eski baza ishlatiladi
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(32)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin2026')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 if not os.path.exists(UPLOAD_FOLDER):
@@ -1541,115 +1541,146 @@ def add_shop():
 
 @app.route('/update_order/<int:order_id>', methods=['POST'])
 def update_order(order_id):
-    shop_name = request.form.get('shop_name')
-    comment = request.form.get('comment', '')
+    shop_name = (request.form.get('shop_name') or '').strip()
+    comment = request.form.get('comment', '').strip()
+    price_type = request.form.get('price_type', 'optom')
+    if price_type not in ('optom', 'chakana'):
+        price_type = 'optom'
     try:
         discount = max(0.0, float((request.form.get('discount', '0') or '0').replace(',', '.')))
     except (TypeError, ValueError):
-        discount = 0.0
-    price_type = request.form.get('price_type', 'optom')
-    
+        return 'Chegirma summasi noto‘g‘ri kiritilgan.', 400
+    if not shop_name:
+        return 'Do‘kon nomini tanlang.', 400
+
     product_names = request.form.getlist('product_name')
     qtys = request.form.getlist('qty')
-    
     conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # 1. Oldingi buyurtma miqdorlarini skladga qaytarib qo'shamiz
-    old_order = cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    if not old_order:
-        conn.close()
-        return 'Buyurtma topilmadi.', 404
-    if old_order['items_text']:
-        for line in old_order['items_text'].split('\n'):
-            if line.strip():
-                try:
-                    parts = line.split(' - ')
-                    if len(parts) > 1:
-                        p_name = parts[0].strip()
-                        qty_part = parts[1].split('x')[0].strip().replace(',', '.')
-                        old_qty = float(qty_part)
-                        cursor.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (old_qty, p_name))
-                        record_stock_movement(conn, p_name, old_qty, 'Buyurtma tahriri — eski qoldiq qaytarildi', str(order_id))
-                except Exception as e:
-                    print("Eski qoldiqni qaytarishda xato:", e)
-                    pass
+    try:
+        old_order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
+        if not old_order:
+            return 'Buyurtma topilmadi.', 404
+        if old_order['status'] == 'Yetkazildi' and old_order['shop_name'] != shop_name:
+            return 'Yetkazilgan buyurtmaning do‘konini almashtirishdan oldin holatini qaytaring.', 400
 
-    # 2. Yangi mahsulotlar ro'yxatini yig'amiz
-    total_sum = 0
-    cost_total = 0
-    items_text = ''
-    
-    for i in range(len(product_names)):
-        p_name = product_names[i]
-        if not p_name: 
-            continue
-        try:
-            qty = float((qtys[i] or '0').replace(',', '.'))
-            if qty <= 0:
+        conn.execute('BEGIN IMMEDIATE')
+        if old_order['items_text']:
+            for line in old_order['items_text'].splitlines():
+                if not line.strip():
+                    continue
+                parts = line.split(' - ', 1)
+                if len(parts) != 2:
+                    continue
+                old_name = parts[0].strip()
+                try:
+                    old_qty = float(parts[1].split('x', 1)[0].strip().replace(',', '.'))
+                except (ValueError, TypeError):
+                    continue
+                if old_qty > 0:
+                    conn.execute('UPDATE products SET stock = stock + ? WHERE name = ?', (old_qty, old_name))
+                    if conn.execute('SELECT changes()').fetchone()[0]:
+                        record_stock_movement(conn, old_name, old_qty, 'Buyurtma tahriri — eski qoldiq qaytarildi', str(order_id))
+
+        total_sum = 0.0
+        cost_total = 0.0
+        items = []
+        for i, p_name in enumerate(product_names):
+            p_name = (p_name or '').strip()
+            if not p_name:
                 continue
-        except (ValueError, TypeError, IndexError):
-            continue
-            
-        prod = cursor.execute('SELECT optom_price, chakana_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
-        if prod:
-            price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
-            stock_p = safe_number(prod['stock'])
-            if stock_p < qty:
-                conn.rollback()
-                conn.close()
-                return f"Omborda {p_name} yetarli emas. Qoldiq: {stock_p}", 400
-            summa = price * qty
-            total_sum += summa
+            if i >= len(qtys):
+                raise ValueError(f'{p_name}: miqdor kiritilmagan.')
+            try:
+                qty = float((qtys[i] or '0').replace(',', '.'))
+            except (ValueError, TypeError):
+                raise ValueError(f'{p_name}: miqdor noto‘g‘ri.')
+            if qty <= 0:
+                raise ValueError(f'{p_name}: miqdor noldan katta bo‘lishi kerak.')
+            prod = conn.execute('SELECT id, name, optom_price, chakana_price, cost_price, stock FROM products WHERE name = ?', (p_name,)).fetchone()
+            if not prod:
+                raise ValueError(f'{p_name}: mahsulot topilmadi.')
+            stock = safe_number(prod['stock'])
+            if stock < qty:
+                raise ValueError(f'Omborda {p_name} yetarli emas. Qoldiq: {stock:g}')
+            price = safe_number(prod['optom_price']) if price_type == 'optom' else safe_number(prod['chakana_price'] or prod['optom_price'])
+            subtotal = price * qty
+            total_sum += subtotal
             cost_total += safe_number(prod['cost_price']) * qty
-            items_text += f'{p_name} - {qty}x = {summa:,.0f} so\'m\n'
-            cursor.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
+            items.append(f"{p_name} - {qty:g}x = {subtotal:,.0f} so'm")
+            conn.execute('UPDATE products SET stock = stock - ? WHERE id = ?', (qty, prod['id']))
             record_stock_movement(conn, p_name, -qty, 'Buyurtma tahriri', str(order_id))
 
-    final_sum = max(0, total_sum - discount)
+        discount = min(discount, total_sum)
+        final_sum = max(0.0, total_sum - discount)
+        if old_order['status'] == 'Yetkazildi':
+            delta = final_sum - safe_number(old_order['total_sum'])
+            if abs(delta) > 0.000001:
+                shop = conn.execute('SELECT debt FROM shops WHERE name = ?', (shop_name,)).fetchone()
+                if shop:
+                    conn.execute('UPDATE shops SET debt = ? WHERE name = ?',
+                                 (max(0.0, safe_number(shop['debt']) + delta), shop_name))
 
-    # 3. Buyurtmani bazada yangilash
-    cursor.execute(
-        'UPDATE orders SET shop_name = ?, total_sum = ?, items_text = ?, price_type = ?, discount = ?, comment = ?, cost_total = ? WHERE id = ?',
-        (shop_name, final_sum, items_text, price_type, discount, comment, cost_total, order_id)
-    )
-    conn.commit()
-    conn.close()
+        conn.execute("""UPDATE orders SET shop_name = ?, total_sum = ?, items_text = ?, price_type = ?,
+                        discount = ?, comment = ?, cost_total = ? WHERE id = ?""",
+                     (shop_name, final_sum, '\n'.join(items), price_type, discount, comment, cost_total, order_id))
+        log_audit(conn, 'Buyurtma tahrirlandi', 'order', order_id,
+                  f'do‘kon={shop_name}; jami={final_sum:.2f}; mahsulotlar={len(items)}')
+        conn.commit()
+    except ValueError as exc:
+        conn.rollback()
+        return str(exc), 400
+    except Exception as exc:
+        conn.rollback()
+        print('Buyurtmani tahrirlash xatosi:', exc)
+        return 'Buyurtmani saqlashda xato yuz berdi. O‘zgarishlar saqlanmadi.', 500
+    finally:
+        conn.close()
     return redirect(url_for('operator_dashboard'))
 
 @app.route('/update_shop/<int:shop_id>', methods=['POST'])
 def update_shop(shop_id):
-  name = request.form['name']
-  phone = request.form['phone']
+  name = request.form.get('name', '').strip()
+  phone = request.form.get('phone', '').strip()
   region = request.form.get('region', '')
   landmark = request.form.get('landmark', '')
   visit_days = request.form.get('visit_days', '')
   inventory = request.form.get('inventory', '')
   territory = request.form.get('territory', '')
 
+  if not name:
+    return 'Do‘kon nomini kiriting.', 400
   conn = get_db_connection()
   try:
     conn.execute(
         'UPDATE shops SET name = ?, phone = ?, region = ?, landmark = ?, visit_days = ?, inventory = ?, territory = ? WHERE id = ?',
         (name, phone, region, landmark, visit_days, inventory, territory, shop_id),
     )
+    log_audit(conn, 'Do‘kon tahrirlandi', 'shop', shop_id, f'nomi={name}; telefon={phone}')
     conn.commit()
+  except sqlite3.IntegrityError:
+    conn.rollback()
+    return 'Bunday nomdagi do‘kon allaqachon mavjud.', 400
   except Exception as e:
-    print(e)
-  conn.close()
+    conn.rollback()
+    print('Do‘konni tahrirlash xatosi:', e)
+    return 'Do‘konni saqlashda xato yuz berdi.', 500
+  finally:
+    conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
 @app.route('/update_product/<int:prod_id>', methods=['POST'])
 def update_product(prod_id):
-  name = request.form['name']
-  category = request.form.get('category', 'Boshqa')
+  name = request.form.get('name', '').strip()
+  category = request.form.get('category', 'Boshqa').strip() or 'Boshqa'
   stock = safe_number(request.form.get('stock', 0), minimum=0)
   cost_price = safe_number(request.form.get('cost_price', 0), minimum=0)
   optom_price = safe_number(request.form.get('optom_price', 0), minimum=0)
   chakana_price = safe_number(request.form.get('chakana_price', optom_price), minimum=0)
   agent_percent = safe_number(request.form.get('agent_percent', 5), minimum=0, maximum=100)
 
+  if not name:
+    return 'Mahsulot nomini kiriting.', 400
   conn = get_db_connection()
   try:
     conn.execute(
@@ -1666,9 +1697,13 @@ def update_product(prod_id):
             prod_id,
         ),
     )
+    log_audit(conn, 'Mahsulot tahrirlandi', 'product', prod_id, f'nomi={name}; qoldiq={stock}; tannarx={cost_price}; optom={optom_price}; chakana={chakana_price}')
     conn.commit()
   except Exception as e:
+    conn.rollback()
     print('Mahsulotni tahrirlash xatosi:', e)
+    conn.close()
+    return 'Mahsulotni saqlashda xato yuz berdi. O‘zgarishlar saqlanmadi.', 500
   conn.close()
   return redirect(url_for('operator_dashboard'))
 
@@ -1714,10 +1749,7 @@ def add_agent_web():
   tg_id = request.form.get('tg_id')
   role = request.form.get('role', 'agent')
   territory = request.form.get('territory', '')
-  try:
-    salary_percent = float((request.form.get('salary_percent', '5') or '5').replace(',', '.'))
-  except (TypeError, ValueError):
-    salary_percent = 5.0
+  salary_percent = safe_number(request.form.get('salary_percent', '5'), default=5.0, minimum=0, maximum=100)
   if tg_id:
     try:
       tg_id = int(tg_id)
@@ -1914,25 +1946,31 @@ def web_delete_agent(tg_id):
 
 @app.route('/update_agent/<int:tg_id>', methods=['POST'])
 def update_agent(tg_id):
-  name = request.form.get('name')
-  phone = request.form.get('phone')
-  role = request.form.get('role')
+  name = request.form.get('name', '').strip()
+  phone = request.form.get('phone', '').strip()
+  role = request.form.get('role', 'agent').strip()
   territory = request.form.get('territory', '')
   try:
     salary_percent = float((request.form.get('salary_percent', '5') or '5').replace(',', '.'))
+    salary_percent = min(100.0, max(0.0, salary_percent))
   except (TypeError, ValueError):
     salary_percent = 5.0
 
+  if not name:
+    return 'Agent nomini kiriting.', 400
   conn = get_db_connection()
   try:
     conn.execute(
         'UPDATE users SET name = ?, phone = ?, role = ?, territory = ?, salary_percent = ? WHERE tg_id = ?',
         (name, phone, role, territory, salary_percent, tg_id),
     )
+    log_audit(conn, 'Agent tahrirlandi', 'agent', tg_id, f'nomi={name}; rol={role}; foiz={salary_percent}')
     conn.commit()
   except Exception as e:
+    conn.rollback()
     print('Agentni tahrirlash xatosi:', e)
-  conn.close()
+  finally:
+    conn.close()
   return redirect(url_for('operator_dashboard'))
 
 
@@ -2788,7 +2826,7 @@ HTML_TEMPLATE = """
                                                 </td>
                                                 <td>
                                                     {% if o['status'] == 'Yangi' %}
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick='openEditOrderModal("{{ o['id'] }}", "{{ o['shop_name'] | e }}", {{ o['discount'] or 0 }}, "{{ o['comment'] | e }}", "{{ o['price_type'] or 'optom' }}", {{ o['items_text'] | tojson }})'> <i class="bi bi-pencil"></i> Tahrir </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 mb-1 w-100" style="font-size: 11px;" onclick='openEditOrderModal({{ o["id"]|tojson }}, {{ o["shop_name"]|tojson }}, {{ (o["discount"] or 0)|tojson }}, {{ o["comment"]|tojson }}, {{ (o["price_type"] or "optom")|tojson }}, {{ o["items_text"]|tojson }})'> <i class="bi bi-pencil"></i> Tahrir </button>
                                                     <form action="/update_status/{{ o['id'] }}" method="POST" class="d-flex gap-1 mb-1">
                                                         <select name="status" class="form-select form-select-sm" style="font-size: 11px; width: 90px;">
                                                             <option value="Yangi" {% if o['status'] == 'Yangi' %}selected{% endif %}>Yangi</option>
@@ -2861,7 +2899,7 @@ HTML_TEMPLATE = """
                                         <tbody>
                                             {% for p in products %}
                                             <tr>
-                                                <td class="product-row" onclick="openEditProductModal('{{ p['id'] }}', '{{ p['name'] | e }}', '{{ p['category'] | e }}', '{{ p['stock'] }}', '{{ p['cost_price'] }}', '{{ p['optom_price'] }}', '{{ p['chakana_price'] }}', '{{ p['agent_percent'] }}')">
+                                                <td class="product-row" onclick='openEditProductModal({{ p["id"]|tojson }}, {{ p["name"]|tojson }}, {{ p["category"]|tojson }}, {{ p["stock"]|tojson }}, {{ p["cost_price"]|tojson }}, {{ p["optom_price"]|tojson }}, {{ p["chakana_price"]|tojson }}, {{ p["agent_percent"]|tojson }})'>
                                                     <b>{{ p['name'] }}</b><br><small class="text-muted">{{ p['category'] }}</small>
                                                 </td>
                                                 <td><span class="badge bg-success fs-6">{{ p['stock'] }}</span></td>
@@ -2959,14 +2997,14 @@ HTML_TEMPLATE = """
                                         <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for s in shops %}
-                                            <tr class="shop-row" onclick='openEditShopModal({{ s["id"]|tojson }}, {{ s["name"]|tojson }}, {{ s["phone"]|tojson }}, {{ s["region"]|tojson }}, {{ s["landmark"]|tojson }}, {{ s["visit_days"]|tojson }}, {{ s["inventory"]|tojson }})'>
+                                            <tr class="shop-row" onclick='openEditShopModal({{ s["id"]|tojson }}, {{ s["name"]|tojson }}, {{ s["phone"]|tojson }}, {{ s["region"]|tojson }}, {{ s["landmark"]|tojson }}, {{ s["visit_days"]|tojson }}, {{ s["inventory"]|tojson }}, {{ s["territory"]|tojson }})'>
                                                 <td><b>{{ s['name'] }}</b><br><small class="text-muted">{{ s['phone'] }}</small></td>
                                                 <td><b>{{ s['region'] }}</b><br><small class="text-muted">{{ s['landmark'] }}</small></td>
                                                 <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
                                                 <td><small class="text-primary fw-bold">{{ s['inventory'] }}</small></td>
                                                 <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
                                                 <td onclick="event.stopPropagation();" class="text-nowrap">
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick='openEditShopModal({{ s["id"]|tojson }}, {{ s["name"]|tojson }}, {{ s["phone"]|tojson }}, {{ s["region"]|tojson }}, {{ s["landmark"]|tojson }}, {{ s["visit_days"]|tojson }}, {{ s["inventory"]|tojson }})'><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick='openEditShopModal({{ s["id"]|tojson }}, {{ s["name"]|tojson }}, {{ s["phone"]|tojson }}, {{ s["region"]|tojson }}, {{ s["landmark"]|tojson }}, {{ s["visit_days"]|tojson }}, {{ s["inventory"]|tojson }}, {{ s["territory"]|tojson }})'><i class="bi bi-pencil"></i> Tahrir</button>
                                                     <form action="/pay_debt" method="POST" class="d-inline-flex gap-1 mt-1">
                                                         <input type="hidden" name="shop_id" value="{{ s['id'] }}">
                                                         <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
@@ -3251,7 +3289,7 @@ HTML_TEMPLATE = """
 <script>
 let allProductsList = [
     {% for p in products %}
-    {name: "{{ p['name'] | e }}", price: "{{ p['optom_price'] }}"},
+    {name: {{ p['name'] | tojson }}, price: {{ p['optom_price'] | tojson }}},
     {% endfor %}
 ];
 
@@ -3265,7 +3303,7 @@ function openEditOrderModal(id, shopName, discount, comment, priceType, itemsTex
     let container = document.getElementById('edit-modal-items-container');
     container.innerHTML = '';
 
-    let lines = itemsText.split('\n');
+    let lines = itemsText.split('\\n');
     let hasItems = false;
 
     lines.forEach(line => {
@@ -3331,14 +3369,15 @@ function addEditModalRow(selectedProd = '', qtyVal = '1') {
         let days = Array.from(badges).map(b => b.innerText);
         document.getElementById('visit_days_input').value = days.join(', ');
     }
-    function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
+    function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory, territory) {
         document.getElementById('editShopForm').action = '/update_shop/' + id;
         document.getElementById('edit_shop_name').value = name;
         document.getElementById('edit_shop_phone').value = phone;
         document.getElementById('edit_shop_region').value = region;
         document.getElementById('edit_shop_landmark').value = landmark;
         document.getElementById('edit_shop_visit_days').value = visitDays;
-        document.getElementById('edit_shop_inventory').value = inventory;
+        document.getElementById('edit_shop_inventory').value = inventory ?? '';
+        document.getElementById('edit_shop_territory').value = territory ?? '';
         new bootstrap.Modal(document.getElementById('editShopModal')).show();
     }
     function openEditProductModal(id, name, category, stock, cost, optom, chakana, percent) {
@@ -3656,6 +3695,7 @@ def update_status(order_id):
           delta = safe_number(ord_data['total_sum']) * (1 if new_delivered else -1)
           conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (max(0, curr_debt + delta), shop_name))
   conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
+  log_audit(conn, 'Buyurtma holati o‘zgartirildi', 'order', order_id, f'{ord_data["status"] if ord_data else "?"} -> {new_status}')
   conn.execute('INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?, ?, ?)', (order_id, new_status, bugun))
   conn.commit()
   conn.close()
@@ -3667,7 +3707,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        if username == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+        if ADMIN_PASSWORD and username == ADMIN_LOGIN and password == ADMIN_PASSWORD:
             session.clear()
             session['logged_in'] = True
             session['username'] = username
@@ -3903,6 +3943,9 @@ def run_bot():
 
 if __name__ == '__main__':
     init_web_db()
+
+    if not ADMIN_PASSWORD:
+        print("DIQQAT: ADMIN_PASSWORD sozlanmagan. Admin kirishi uchun PowerShell’da $env:ADMIN_PASSWORD='kuchli_parol' deb belgilang.")
 
     if BOT_TOKEN and ':' in BOT_TOKEN and 'PLACEHOLDER' not in BOT_TOKEN:
         bot_thread = threading.Thread(target=run_bot, daemon=True)
