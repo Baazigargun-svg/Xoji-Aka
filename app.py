@@ -592,16 +592,17 @@ def agent_salary_report_bot(message):
         for line in ao['items_text'].split('\n'):
             if line.strip():
                 try:
-                    parts = line.split(' - ')
-                    p_name = parts[0].strip()
-                    qty_part = parts[1].split('x')[0].strip()
-                    qty = float(qty_part)
-                    prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
-                    if prod_info:
-                        p_price = prod_info['optom_price'] or 0
-                        p_perc = prod_info['agent_percent'] or 5
-                        item_total = p_price * qty
-                        calculated_salary += (item_total * p_perc / 100)
+                    if ' - ' in line:
+                        parts = line.rsplit(' - ', 1)
+                        p_name = parts[0].strip()
+                        qty_part = parts[1].split('x')[0].strip()
+                        qty = float(qty_part)
+                        prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
+                        if prod_info:
+                            p_price = prod_info['optom_price'] or 0
+                            p_perc = prod_info['agent_percent'] or 5
+                            item_total = p_price * qty
+                            calculated_salary += (item_total * p_perc / 100)
                 except:
                     pass
     
@@ -843,12 +844,13 @@ def zavsklad_combine_and_send(call):
         total_general_sum += o['total_sum']
         for line in o['items_text'].split('\n'):
             if line.strip():
-                parts = line.split(' - ')
-                p_name = parts[0]
                 try:
-                    qty_str = parts[1].split('x')[0].strip()
-                    qty = float(qty_str)
-                    combined_items[p_name] = combined_items.get(p_name, 0) + qty
+                    if ' - ' in line:
+                        parts = line.rsplit(' - ', 1)
+                        p_name = parts[0]
+                        qty_str = parts[1].split('x')[0].strip()
+                        qty = float(qty_str)
+                        combined_items[p_name] = combined_items.get(p_name, 0) + qty
                 except:
                     pass
 
@@ -887,7 +889,6 @@ def zavsklad_combine_and_send(call):
 @bot.message_handler(func=lambda message: message.text == '🚚 Yetkazilishi Kerak Buyurtmalar')
 def ekspeditor_view_orders(message):
     conn = get_db_connection()
-    # Ekspeditor ham "Yangi", ham "Otgruzka" statusidagi buyurtmalarni ko'ra oladi
     orders = conn.execute("SELECT id, shop_name, total_sum, items_text, status FROM orders WHERE status IN ('Yangi', 'Otgruzka') ORDER BY id DESC").fetchall()
     conn.close()
     if not orders:
@@ -1052,7 +1053,6 @@ def finish_sex_income(message):
     items_text += f'🔹 {p_name}: +{qty}\n'
     cart_items.append({'name': p_name, 'qty': qty})
     
-    # Bazaga product_incomes tarixiga yozish
     bugun_str = datetime.now().strftime('%Y-%m-%d %H:%M')
     cursor.execute(
         'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, 0, ?)',
@@ -1505,8 +1505,8 @@ def update_order(order_id):
         for line in old_order['items_text'].split('\n'):
             if line.strip():
                 try:
-                    parts = line.split(' - ')
-                    if len(parts) > 1:
+                    if ' - ' in line:
+                        parts = line.rsplit(' - ', 1)
                         p_name = parts[0].strip()
                         qty_part = parts[1].split('x')[0].strip().replace(',', '.')
                         old_qty = float(qty_part)
@@ -2790,7 +2790,6 @@ HTML_TEMPLATE = """
                                 </div>
                             </div>
                             
-                            <!-- Skladga kirim qilingan mahsulotlar tarixi (Product incomes history) -->
                             <div class="card-glass p-4">
                                 <h5 class="fw-bold mb-3"><i class="bi bi-clock-history me-2 text-primary"></i>Skladga Tovar Kirim Tarixi (Product Incomes History)</h5>
                                 <div class="table-responsive" style="max-height: 250px;">
@@ -2866,14 +2865,14 @@ HTML_TEMPLATE = """
                                         <thead><tr><th>Do'kon / Tel</th><th>Hudud & Orienter</th><th>Tashrif kuni</th><th>Inventar</th><th>Qarz</th><th>Amallar</th></tr></thead>
                                         <tbody>
                                             {% for s in shops %}
-                                            <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')">
+                                            <tr class="shop-row" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['territory'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')">
                                                 <td><b>{{ s['name'] }}</b><br><small class="text-muted">{{ s['phone'] }}</small></td>
                                                 <td><b>{{ s['region'] }}</b><br><small class="text-muted">{{ s['landmark'] }}</small></td>
                                                 <td><span class="badge bg-light text-dark border">{{ s['visit_days'] }}</span></td>
                                                 <td><small class="text-primary fw-bold">{{ s['inventory'] }}</small></td>
                                                 <td><b class="text-danger">{{ "{:,.0f}".format(s['debt']) }} so'm</b></td>
                                                 <td onclick="event.stopPropagation();" class="text-nowrap">
-                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 me-1" onclick="openEditShopModal('{{ s['id'] }}', '{{ s['name'] | e }}', '{{ s['phone'] | e }}', '{{ s['territory'] | e }}', '{{ s['region'] | e }}', '{{ s['landmark'] | e }}', '{{ s['visit_days'] | e }}', '{{ s['inventory'] | e }}')"><i class="bi bi-pencil"></i> Tahrir</button>
                                                     <form action="/pay_debt" method="POST" class="d-inline-flex gap-1 mt-1">
                                                         <input type="hidden" name="shop_id" value="{{ s['id'] }}">
                                                         <input type="number" name="amount" class="form-control form-control-sm" placeholder="Summa" required style="width: 80px;">
@@ -3144,7 +3143,6 @@ HTML_TEMPLATE = """
                     <hr>
                     <label class="form-label small fw-bold text-secondary mb-2">Mahsulotlar ro'yxati:</label>
                     <div id="edit-modal-items-container">
-                        <!-- Dinamik qatorlar shu yerga tushadi -->
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="addEditModalRow()">+ Yana mahsulot qo'shish</button>
                 </div>
@@ -3178,16 +3176,16 @@ function openEditOrderModal(id, shopName, discount, comment, priceType, itemsTex
     lines.forEach(line => {
         if (line.trim()) {
             hasItems = true;
-            let parts = line.split(' - ');
-            let pName = parts[0].trim();
+            let lastIndex = line.lastIndexOf(' - ');
+            let pName = lastIndex !== -1 ? line.substring(0, lastIndex).trim() : line.trim();
+            let rightPart = lastIndex !== -1 ? line.substring(lastIndex + 3) : '';
             let qtyPart = '1';
-            if (parts[1]) {
-                let subParts = parts[1].split('x');
+            if (rightPart) {
+                let subParts = rightPart.split('x');
                 if (subParts[0]) {
                     qtyPart = subParts[0].trim().replace(',', '.');
                 }
             }
-            
             addEditModalRow(pName, qtyPart);
         }
     });
@@ -3238,10 +3236,11 @@ function addEditModalRow(selectedProd = '', qtyVal = '1') {
         let days = Array.from(badges).map(b => b.innerText);
         document.getElementById('visit_days_input').value = days.join(', ');
     }
-    function openEditShopModal(id, name, phone, region, landmark, visitDays, inventory) {
+    function openEditShopModal(id, name, phone, territory, region, landmark, visitDays, inventory) {
         document.getElementById('editShopForm').action = '/update_shop/' + id;
         document.getElementById('edit_shop_name').value = name;
         document.getElementById('edit_shop_phone').value = phone;
+        document.getElementById('edit_shop_territory').value = territory;
         document.getElementById('edit_shop_region').value = region;
         document.getElementById('edit_shop_landmark').value = landmark;
         document.getElementById('edit_shop_visit_days').value = visitDays;
@@ -3375,17 +3374,18 @@ def operator_dashboard():
               for line in ao['items_text'].split('\n'):
                   if line.strip():
                       try:
-                          parts = line.split(' - ')
-                          p_name = parts[0].strip()
-                          qty_part = parts[1].split('x')[0].strip()
-                          qty = float(qty_part)
-                          
-                          prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
-                          if prod_info:
-                              p_price = prod_info['optom_price'] or 0
-                              p_perc = prod_info['agent_percent'] or 5
-                              item_total = p_price * qty
-                              calculated_salary += (item_total * p_perc / 100)
+                          if ' - ' in line:
+                              parts = line.rsplit(' - ', 1)
+                              p_name = parts[0].strip()
+                              qty_part = parts[1].split('x')[0].strip()
+                              qty = float(qty_part)
+                              
+                              prod_info = conn.execute("SELECT optom_price, agent_percent FROM products WHERE name = ?", (p_name,)).fetchone()
+                              if prod_info:
+                                  p_price = prod_info['optom_price'] or 0
+                                  p_perc = prod_info['agent_percent'] or 5
+                                  item_total = p_price * qty
+                                  calculated_salary += (item_total * p_perc / 100)
                       except:
                           pass
           
@@ -3416,25 +3416,24 @@ def operator_dashboard():
   total_revenue_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE status != 'Bekor'").fetchone()
   total_revenue = total_revenue_res['s'] if total_revenue_res and total_revenue_res['s'] else 0
 
-  # Sotilgan tovarlar tannarxini hisoblash (Total Cost of Goods Sold)
   all_valid_orders = conn.execute("SELECT items_text FROM orders WHERE status != 'Bekor'").fetchall()
   total_cost = 0
   for ao in all_valid_orders:
       for line in ao['items_text'].split('\n'):
           if line.strip():
               try:
-                  parts = line.split(' - ')
-                  p_name = parts[0].strip()
-                  qty_part = parts[1].split('x')[0].strip().replace(',', '.')
-                  qty = float(qty_part)
-                  prod_info = conn.execute("SELECT cost_price FROM products WHERE name = ?", (p_name,)).fetchone()
-                  if prod_info:
-                      c_price = prod_info['cost_price'] or 0
-                      total_cost += c_price * qty
+                  if ' - ' in line:
+                      parts = line.rsplit(' - ', 1)
+                      p_name = parts[0].strip()
+                      qty_part = parts[1].split('x')[0].strip().replace(',', '.')
+                      qty = float(qty_part)
+                      prod_info = conn.execute("SELECT cost_price FROM products WHERE name = ?", (p_name,)).fetchone()
+                      if prod_info:
+                          c_price = prod_info['cost_price'] or 0
+                          total_cost += c_price * qty
               except:
                   pass
 
-  # Sof foyda = Umumiy tushum - Sotilgan tovarlar tannarxi - Umumiy chiqimlar
   net_profit = total_revenue - total_cost - exp_sum
   conn.close()
 
@@ -3668,7 +3667,6 @@ def add_stock():
     )
     prod_name_for_history = product_select
 
-  # Kirim tarixiga qo'shish
   bugun_str = datetime.now().strftime('%Y-%m-%d %H:%M')
   conn.execute(
       'INSERT INTO product_incomes (product_name, qty, cost_price, date) VALUES (?, ?, ?, ?)',
