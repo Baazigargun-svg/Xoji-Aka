@@ -378,6 +378,24 @@ def init_web_db():
       ('', 'Crafers bekat', '', 'Termiz shahar', 'eski pioner roparasi'),
       ('', 'Botir sinfdosh', '', 'Termiz shahar', 'eski pioner roparasi'),
       ('', 'Aznaf market', '', 'Termiz shahar', 'avtosalon roparasi'),
+      ('', '777 market', '', 'Termiz shahar', 'Movaro'),
+      ('Madiyeva Iroda', 'MAdiyeva I market', '', 'Termiz shahar', 'avtovokzal litsey'),
+      ('', 'Jomiy bekat', '', 'Termiz shahar', 'Manguzar'),
+      ('', 'Sher namuna', '', 'Termiz tuman', 'Senter kamaz'),
+      ('', 'Amin market', '', 'Termiz shahar', 'cola orqasi'),
+      ('Uralov Zuhriddin', 'Uralov zuhriddin', '', 'Termiz shahar', 'Yubileyniy lola'),
+      ('Behruz omad nur market', 'Behruz omad nur market', '', 'Termiz shahar', 'Otan polvon yoli'),
+      ('', 'Angoriskiy market', '', 'Termiz shahar', 'angorskiy roparasi'),
+      ('', 'Oila nur market', '', 'Termiz shahar', 'office market orqasi'),
+      ('', 'Nyatloshka market', '', 'Termiz shahar', 'naytloshka yoni'),
+      ('', 'Yodgorov Abduhakim', '', 'Termiz shahar', 'Yashil dunyo ichi'),
+      ('', 'Hojanova Rano', '', 'Termiz shahar', 'Savhozniy'),
+      ('', 'Yulduz bekat', '', 'Termiz shahar', 'shox bekat yo'li'),
+      ('', 'Toyirova Nigora', '', 'Termiz shahar', 'Milliy gvardiya yoni'),
+      ('', 'Mancho market', '', 'Termiz shahar', 'Bochka yoli'),
+      ('', 'Malikov Eldor', '', 'Termiz shahar', 'Movaro'),
+      ('', 'Alisherbek Xoltora', '', 'Termiz shahar', 'Tisuga yetmay'), 
+      
   ]
   for s_firm, s_name, s_phone, s_region, s_landmark in initial_shops:
     cursor.execute(
