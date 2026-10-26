@@ -110,7 +110,8 @@ def imagekitga_yuklash(file_obj):
 
 # ===== IMAGEKIT KODI TUGADI =====
 user_steps = {}
-
+# Slayd uchun foydalanuvchining turgan joyi (index)
+catalog_indexes = {}
 
 def get_db_connection():
   conn = sqlite3.connect(DB_NAME)
@@ -1669,26 +1670,114 @@ def send_product_catalog_to_agent(message):
         conn.close()
         bot.send_message(message.chat.id, 'Katalogni ko‘rish uchun agent roli kerak.')
         return
-    items = conn.execute('SELECT name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
+    
+    items = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
     conn.close()
+    
     if not items:
         bot.send_message(message.chat.id, 'Katalog hozircha bo‘sh. Operator web paneldan rasm va narxlarni joylashtiradi.')
         return
-    bot.send_message(message.chat.id, f'🖼 <b>Xoji Aka mahsulotlar katalogi</b>\nJami mahsulot: {len(items)}', parse_mode='HTML')
-    for item in items:
-        caption = f"<b>{item['name']}</b>\n💰 Narxi: {safe_number(item['price']):,.0f} so‘m"
-        if item['description']:
-            caption += f"\n{item['description']}"
-        try:
-            image_path = os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(item['image_filename'] or ''))
-            if item['image_filename'] and os.path.isfile(image_path):
+    
+    # Foydalanuvchi uchun 0-indexni saqlaymiz va birinchi mahsulotni slayd qilib yuboramiz
+    catalog_indexes[message.chat.id] = 0
+    send_catalog_slide(message.chat.id, 0, items)
+
+
+def send_catalog_slide(chat_id, index, items_list=None):
+    if not items_list:
+        conn = get_db_connection()
+        items_list = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
+        conn.close()
+        
+    if not items_list:
+        return
+
+    # Index chegaradan chiqib ketmasa
+    index = index % len(items_list)
+    catalog_indexes[chat_id] = index
+    
+    item = items_list[index]
+    image_url = item['image_filename']
+    
+    caption = (
+        f"📦 <b>Mahsulot:</b> {item['name']}\n"
+        f"💰 <b>Narxi:</b> {safe_number(item['price']):,.0f} so‘m\n"
+    )
+    if item['description']:
+        caption += f"📝 {item['description']}\n"
+    
+    caption += f"\n📄 Sahifa: {index + 1} / {len(items_list)}"
+
+    # Slayd uchun tugmalar (Orqaga / Soni / Keyingi)
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    prev_btn = types.InlineKeyboardButton("⬅️ Orqaga", callback_data="cat_prev")
+    counter_btn = types.InlineKeyboardButton(f"{index + 1}/{len(items_list)}", callback_data="cat_noop")
+    next_btn = types.InlineKeyboardButton("Keyingi ➡️", callback_data="cat_next")
+    
+    if len(items_list) > 1:
+        markup.add(prev_btn, counter_btn, next_btn)
+
+    try:
+        # ImageKit yoki oddiy URL bo'lsa
+        if image_url and (image_url.startswith('http://') or image_url.startswith('https://')):
+            bot.send_photo(
+                chat_id=chat_id,
+                photo=image_url,
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=markup
+            )
+        else:
+            # Agar lokal fayl bo'lsa
+            image_path = os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(image_url or ''))
+            if image_url and os.path.isfile(image_path):
                 with open(image_path, 'rb') as photo:
-                    bot.send_photo(message.chat.id, photo, caption=caption[:1024], parse_mode='HTML')
+                    bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo,
+                        caption=caption,
+                        parse_mode='HTML',
+                        reply_markup=markup
+                    )
             else:
-                bot.send_message(message.chat.id, caption, parse_mode='HTML')
-        except Exception as exc:
-            app.logger.exception('Katalogni Telegramga yuborish xatosi: %s', exc)
-            bot.send_message(message.chat.id, caption, parse_mode='HTML')
+                bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=markup)
+    except Exception as exc:
+        app.logger.exception('Katalogni slayd qilishda xato: %s', exc)
+        bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=markup)
+
+
+# Tugmalar bosilganda ishlaydigan handler
+@bot.callback_query_handler(func=lambda call: call.data.startswith('cat_'))
+def catalog_callback_handler(call):
+    chat_id = call.message.chat.id
+    current_index = catalog_indexes.get(chat_id, 0)
+    
+    conn = get_db_connection()
+    items_list = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
+    conn.close()
+    
+    if not items_list:
+        bot.answer_callback_query(call.id, "Katalog bo'sh!")
+        return
+
+    if call.data == 'cat_next':
+        current_index += 1
+    elif call.data == 'cat_prev':
+        current_index -= 1
+    elif call.data == 'cat_noop':
+        bot.answer_callback_query(call.id)
+        return
+
+    catalog_indexes[chat_id] = current_index % len(items_list)
+    
+    # Eski xabarni o'chirib, yangi mahsulotni rasm bilan chiqaramiz
+    try:
+        bot.delete_message(chat_id, call.message.message_id)
+    except:
+        pass
+        
+    send_catalog_slide(chat_id, catalog_indexes[chat_id], items_list)
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(
