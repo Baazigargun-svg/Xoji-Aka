@@ -4331,13 +4331,19 @@ def catalog_image(filename):
 @app.route('/catalog_add', methods=['POST'])
 def catalog_add():
     name = (request.form.get('name') or '').strip()
-    category = (request.form.get('category') or 'Boshqa').strip()  # <--- CATEGORIYANI OLISH
+    category = (request.form.get('category') or 'Boshqa').strip()
     description = (request.form.get('description') or '').strip()
     price = safe_number(request.form.get('price'), -1)
     image = request.files.get('image')
 
-    if not name or price < 0 or not image or not image.filename or not allowed_catalog_file(image.filename):
-        return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
+    if (
+        not name
+        or price < 0
+        or not image
+        or not image.filename
+        or not allowed_catalog_file(image.filename)
+    ):
+        return 'Mahsulot nomi, kategoriya, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
 
     conn = None
     try:
@@ -4350,16 +4356,24 @@ def catalog_add():
             VALUES (?, ?, ?, ?, ?, 1, ?)''',
             (
                 name,
-                category,  # <--- BAZAGA SAQLASH
+                category,
                 price,
                 description,
                 image_url,
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             )
         )
+
+        log_audit(
+            conn,
+            'Katalogga mahsulot qo‘shildi',
+            'catalog',
+            image_url,
+            f'nomi={name}; kategoriya={category}; narx={price}'
+        )
+
         conn.commit()
         return redirect(url_for('index'))
-    ...
 
     except Exception:
         if conn is not None:
