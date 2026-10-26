@@ -239,6 +239,24 @@ def init_web_db():
   conn = get_db_connection()
   cursor = conn.cursor()
 
+  cursor.execute('''CREATE TABLE IF NOT EXISTS catalog_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT 'Boshqa',
+      price REAL NOT NULL DEFAULT 0,
+      description TEXT DEFAULT '',
+      image_filename TEXT DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL)''')
+
+  # Aytaylik, agar bu jadval sizda oldinroq boshqacharoq yaratilgan bo'lsa 
+  # (category ustuni yo'q bo'lsa), xatolik bermasligi uchun migration ham qo'shib qo'yish mumkin:
+  try:
+      cursor.execute("ALTER TABLE catalog_items ADD COLUMN category TEXT DEFAULT 'Boshqa'")
+  except:
+      pass
+
+    
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS users (tg_id INTEGER PRIMARY KEY, name TEXT, phone TEXT, role TEXT DEFAULT 'pending', territory TEXT DEFAULT '', salary_percent REAL DEFAULT 5)'''
   )
@@ -3731,12 +3749,19 @@ HTML_TEMPLATE = """
                         <h5 class="fw-bold mb-3">🖼 Agentlar uchun mahsulotlar katalogi</h5>
                         <p class="text-muted small">Bu yerga mahsulot rasmi, do‘konga ko‘rsatish uchun narxi va izohini joylashtiring. Faol katalog agent web kabineti va Telegram botida ko‘rinadi.</p>
                         <form action="/catalog_add" method="POST" enctype="multipart/form-data" class="row g-3">
-                            <div class="col-md-3"><label class="form-label">Mahsulot nomi</label><input class="form-control" name="name" required maxlength="120"></div>
-                            <div class="col-md-2"><label class="form-label">Narxi (so‘m)</label><input class="form-control" type="number" min="0" step="any" name="price" required></div>
-                            <div class="col-md-3"><label class="form-label">Rasm (JPG/PNG/WEBP)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
-                            <div class="col-md-3"><label class="form-label">Izoh</label><input class="form-control" name="description" maxlength="500" placeholder="Og‘irligi, tarkibi va h.k."></div>
-                            <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Qo‘shish</button></div>
-                        </form>
+    <div class="col-md-3"><label class="form-label">Mahsulot nomi</label><input class="form-control" name="name" required maxlength="120"></div>
+    
+    <!-- 📌 KATEGORIYA INPUTINI SHU YERGA QO'SHASIZ -->
+    <div class="col-md-2">
+        <label class="form-label">Kategoriya</label>
+        <input type="text" name="category" class="form-control" placeholder="Masalan: Yarim tayyor mahsulotlari" required>
+    </div>
+
+    <div class="col-md-2"><label class="form-label">Narxi (so‘m)</label><input class="form-control" type="number" min="0" step="any" name="price" required></div>
+    <div class="col-md-3"><label class="form-label">Rasm (JPG/PNG/WEBP)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
+    <div class="col-md-3"><label class="form-label">Izoh</label><input class="form-control" name="description" maxlength="500" placeholder="Og‘irligi, tarkibi va h.k."></div>
+    <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Qo‘shish</button></div>
+</form>
                     </div>
                     <div class="row g-3">
                     {% for c in catalog_items %}<div class="col-6 col-md-3"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:180px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body"><h6 class="fw-bold">{{ c['name'] }}</h6><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><p class="small text-muted">{{ c['description'] or '' }}</p><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger w-100">O‘chirish</button></form></div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
@@ -4306,17 +4331,12 @@ def catalog_image(filename):
 @app.route('/catalog_add', methods=['POST'])
 def catalog_add():
     name = (request.form.get('name') or '').strip()
+    category = (request.form.get('category') or 'Boshqa').strip()  # <--- CATEGORIYANI OLISH
     description = (request.form.get('description') or '').strip()
     price = safe_number(request.form.get('price'), -1)
     image = request.files.get('image')
 
-    if (
-        not name
-        or price < 0
-        or not image
-        or not image.filename
-        or not allowed_catalog_file(image.filename)
-    ):
+    if not name or price < 0 or not image or not image.filename or not allowed_catalog_file(image.filename):
         return 'Mahsulot nomi, to‘g‘ri narx va JPG/PNG/WEBP rasm kiriting.', 400
 
     conn = None
@@ -4326,27 +4346,20 @@ def catalog_add():
         conn = get_db_connection()
         conn.execute(
             '''INSERT INTO catalog_items
-            (name, price, description, image_filename, active, created_at)
-            VALUES (?, ?, ?, ?, 1, ?)''',
+            (name, category, price, description, image_filename, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)''',
             (
                 name,
+                category,  # <--- BAZAGA SAQLASH
                 price,
                 description,
                 image_url,
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             )
         )
-
-        log_audit(
-            conn,
-            'Katalogga mahsulot qo‘shildi',
-            'catalog',
-            image_url,
-            f'nomi={name}; narx={price}'
-        )
-
         conn.commit()
         return redirect(url_for('index'))
+    ...
 
     except Exception:
         if conn is not None:
