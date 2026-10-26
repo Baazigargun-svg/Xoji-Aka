@@ -2626,11 +2626,55 @@ AGENT_WEBAPP_TEMPLATE = """
 
     <div class="card-mobile">
         <h6 class="fw-bold mb-3">🏪 Hududimdagi do‘konlar, qarz va tashrif rejasi</h6>
-        <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:12px"><thead><tr><th>Do‘kon</th><th>Qarz</th><th>Keyingi tashrif</th><th>Amal</th></tr></thead><tbody>
-        {% for s in shops %}<tr><td><b>{{ s['name'] }}</b><br><small>{{ s['territory'] or s['region'] or '—' }}</small><br><small class="text-muted">Oxirgi: {{ s['last_visit'] or 'qayd yo‘q' }}</small></td><td><b>{{ "{:,.0f}".format(s['debt'] or 0) }} so‘m</b></td><td>{% if s['next_visit_date'] %}<span class="badge {% if s['next_visit_date'] < today_iso %}bg-danger{% elif s['next_visit_date'] == today_iso %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ s['next_visit_date'] }}</span>{% else %}<span class="badge bg-secondary">Reja yo‘q</span>{% endif %}</td><td><form method="POST" class="d-flex gap-1 align-items-center"><input type="hidden" name="action" value="mark_visit"><input type="hidden" name="shop_id" value="{{ s['id'] }}"><select name="interval_days" class="form-select form-select-sm" style="min-width:82px"><option value="1">1 kun</option><option value="3">3 kun</option><option value="7" selected>7 kun</option><option value="14">14 kun</option></select><button class="btn btn-sm btn-success text-nowrap" type="submit">Tashrif qildim</button></form></td></tr>{% else %}<tr><td colspan="4">Do‘konlar yo‘q</td></tr>{% endfor %}
-        </tbody></table></div>
+        
+        <!-- 🔍 Qidirish inputi shu yerga qo'shiladi -->
+        <div class="mb-3">
+            <input type="text" id="agentShopSearch" class="form-control form-control-sm" placeholder="Do‘kon nomi, orienter (mo‘ljal) yoki firma bo‘yicha qidirish..." onkeyup="filterAgentShops()">
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" id="agentShopsTable" style="font-size:12px">
+                <thead>
+                    <tr><th>Do‘kon</th><th>Qarz</th><th>Keyingi tashrif</th><th>Amal</th></tr>
+                </thead>
+                <tbody>
+                {% for s in shops %}
+                <tr>
+                    <td>
+                        <b>{{ s['name'] }}</b><br>
+                        <small class="text-primary">{{ s['firm'] or '' }}</small> <small class="text-muted">({{ s['territory'] or s['region'] or '—' }})</small><br>
+                        <small class="text-secondary"><i class="bi bi-geo-alt"></i> Orienter: {{ s['landmark'] or 'yo‘q' }}</small><br>
+                        <small class="text-muted">Oxirgi: {{ s['last_visit'] or 'qayd yo‘q' }}</small>
+                    </td>
+                    <td><b>{{ "{:,.0f}".format(s['debt'] or 0) }} so‘m</b></td>
+                    <td>
+                        {% if s['next_visit_date'] %}
+                            <span class="badge {% if s['next_visit_date'] < today_iso %}bg-danger{% elif s['next_visit_date'] == today_iso %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ s['next_visit_date'] }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Reja yo‘q</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form method="POST" class="d-flex gap-1 align-items-center">
+                            <input type="hidden" name="action" value="mark_visit">
+                            <input type="hidden" name="shop_id" value="{{ s['id'] }}">
+                            <select name="interval_days" class="form-select form-select-sm" style="min-width:82px">
+                                <option value="1">1 kun</option>
+                                <option value="3">3 kun</option>
+                                <option value="7" selected>7 kun</option>
+                                <option value="14">14 kun</option>
+                            </select>
+                            <button class="btn btn-sm btn-success text-nowrap" type="submit">Tashrif</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">Do‘konlar yo‘q</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
 <script>
     function addMiniRow() {
         let container = document.getElementById('mini-items');
@@ -2638,6 +2682,29 @@ AGENT_WEBAPP_TEMPLATE = """
         row.querySelector('select').selectedIndex = 0;
         row.querySelector('input[name="qty"]').value = '1';
         container.appendChild(row);
+    }
+<script>
+    function addMiniRow() {
+        let container = document.getElementById('mini-items');
+        let row = container.querySelector('.item-row').cloneNode(true);
+        row.querySelector('select').selectedIndex = 0;
+        row.querySelector('input[name="qty"]').value = '1';
+        container.appendChild(row);
+    }
+
+    // 🔍 Agent uchun do'konlarni qidirish funksiyasi (Nom, Orienter va Firma bo'yicha)
+    function filterAgentShops() {
+        let input = document.getElementById('agentShopSearch').value.toLowerCase();
+        let rows = document.querySelectorAll('#agentShopsTable tbody tr');
+        
+        rows.forEach(row => {
+            let text = row.innerText.toLowerCase();
+            if (text.includes(input)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
     }
 </script>
 </body>
