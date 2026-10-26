@@ -506,7 +506,7 @@ def init_web_db():
       ('Karam doʻlma /300 gr', 'Yarim Tayyor Mahsulotlari', 100, 11000.0, 25000.0, 25000.0, 5),
       ('Somsa kesilgan /800 gr', 'Yarim Tayyor Mahsulotlari', 100, 6000.0, 17000.0, 17000.0, 5),
       ('Oʻrama xamir', 'Yarim Tayyor Mahsulotlari', 100, 6000.0, 17000.0, 17000.0, 5),
-      ('KFC Gulim', 'Yarim Tayyor Mahsulotlari', 100.0, 15000, 30000.0, 30000.0, 5),
+      ('KFC XA', 'Yarim Tayyor Mahsulotlari', 100.0, 15000, 30000.0, 30000.0, 5),
       ('Osh masalliq 500 gr', 'Yarim Tayyor Mahsulotlari', 100, 6000.0, 13000.0, 13000.0, 5),
       ('Osh masalliq 1 kg', 'Yarim Tayyor Mahsulotlari', 100, 7000.0, 15000.0, 15000.0, 5),
       ('Lagʻmon', 'Yarim Tayyor Mahsulotlari', 0, 2000.0, 6000.0, 6000.0, 5),
