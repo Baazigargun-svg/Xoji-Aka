@@ -2683,14 +2683,6 @@ AGENT_WEBAPP_TEMPLATE = """
         row.querySelector('input[name="qty"]').value = '1';
         container.appendChild(row);
     }
-<script>
-    function addMiniRow() {
-        let container = document.getElementById('mini-items');
-        let row = container.querySelector('.item-row').cloneNode(true);
-        row.querySelector('select').selectedIndex = 0;
-        row.querySelector('input[name="qty"]').value = '1';
-        container.appendChild(row);
-    }
 
     // 🔍 Agent uchun do'konlarni qidirish funksiyasi (Nom, Orienter va Firma bo'yicha)
     function filterAgentShops() {
