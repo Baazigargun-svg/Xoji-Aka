@@ -1662,8 +1662,11 @@ def admin_income_amount_received(message):
     bot.send_message(message.chat.id, f'✅ Kirim saqlandi: {source} — {amount:,.0f} so‘m', reply_markup=get_main_menu('admin'))
 
 
+# Foydalanuvchining joriy katalog holatini saqlash uchun
+catalog_sessions = {}
+
 @bot.message_handler(func=lambda message: message.text == '🖼 Mahsulotlar katalogi')
-def send_product_catalog_to_agent(message):
+def send_catalog_categories_to_agent(message):
     conn = get_db_connection()
     role_row = conn.execute('SELECT role FROM users WHERE tg_id = ?', (message.from_user.id,)).fetchone()
     if not role_row or not any(r in (role_row['role'] or '') for r in ('agent', 'admin')):
@@ -1671,35 +1674,74 @@ def send_product_catalog_to_agent(message):
         bot.send_message(message.chat.id, 'Katalogni ko‘rish uchun agent roli kerak.')
         return
     
+    # Bazadagi mavjud kategoriyalarni olish
+    categories = conn.execute('SELECT DISTINCT category FROM catalog_items UNION SELECT DISTINCT category FROM products').fetchall()
+    conn.close()
+    
+    if not categories:
+        bot.send_message(message.chat.id, 'Hozircha kategoriyalar yoki mahsulotlar mavjud emas.')
+        return
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for cat in categories:
+        cat_name = cat['category'] if cat['category'] else 'Boshqa'
+        markup.add(types.KeyboardButton(f"📁 {cat_name}"))
+    
+    markup.add(types.KeyboardButton("🔙 Orqaga (Asosiy menyu)"))
+    
+    bot.send_message(
+        message.chat.id,
+        "🖼 <b>Mahsulotlar katalogi</b>\n\nQaysi kategoriyadagi mahsulotlarni ko'rishni xohlaysiz? Quyidagilardan birini tanlang:",
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+# Kategoriyalardan biri tanlanganda ishlaydi
+@bot.message_handler(func=lambda message: message.text and message.text.startswith('📁 '))
+def show_category_catalog_slide(message):
+    cat_name = message.text.replace('📁 ', '').strip()
+    chat_id = message.chat.id
+    
+    conn = get_db_connection()
+    # Avval catalog_items jadvalidan, agar u bo'sh bo'lsa products jadvalidan qidiramiz
     items = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
     conn.close()
     
-    if not items:
-        bot.send_message(message.chat.id, 'Katalog hozircha bo‘sh. Operator web paneldan rasm va narxlarni joylashtiradi.')
-        return
-    
-    # Foydalanuvchi uchun 0-indexni saqlaymiz va birinchi mahsulotni slayd qilib yuboramiz
-    catalog_indexes[message.chat.id] = 0
-    send_catalog_slide(message.chat.id, 0, items)
-
-
-def send_catalog_slide(chat_id, index, items_list=None):
-    if not items_list:
-        conn = get_db_connection()
-        items_list = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
-        conn.close()
+    # Agar catalog_items'da kategoriya ustuni bo'lmasa, uni nom bo'yicha yoki barchasini chiqaramiz
+    # Keling, foydalanuvchiga o'sha kategoriya bo'yicha filtrlangan ro'yxatni tuzamiz:
+    filtered_items = []
+    for item in items:
+        filtered_items.append(item)
         
-    if not items_list:
+    if not filtered_items:
+        bot.send_message(chat_id, f"❌ '{cat_name}' kategoriyasida hozircha mahsulotlar yo'q.")
         return
 
-    # Index chegaradan chiqib ketmasa
+    # Sessiyaga saqlaymiz
+    catalog_sessions[chat_id] = {
+        'category': cat_name,
+        'index': 0,
+        'items': filtered_items
+    }
+    
+    send_filtered_catalog_slide(chat_id, 0)
+
+
+def send_filtered_catalog_slide(chat_id, index):
+    session_data = catalog_sessions.get(chat_id)
+    if not session_data or not session_data['items']:
+        return
+        
+    items_list = session_data['items']
     index = index % len(items_list)
-    catalog_indexes[chat_id] = index
+    session_data['index'] = index
     
     item = items_list[index]
     image_url = item['image_filename']
     
     caption = (
+        f"📂 <b>Kategoriya:</b> {session_data['category']}\n"
         f"📦 <b>Mahsulot:</b> {item['name']}\n"
         f"💰 <b>Narxi:</b> {safe_number(item['price']):,.0f} so‘m\n"
     )
@@ -1708,75 +1750,59 @@ def send_catalog_slide(chat_id, index, items_list=None):
     
     caption += f"\n📄 Sahifa: {index + 1} / {len(items_list)}"
 
-    # Slayd uchun tugmalar (Orqaga / Soni / Keyingi)
+    # Slayd tugmalari
     markup = types.InlineKeyboardMarkup(row_width=3)
-    prev_btn = types.InlineKeyboardButton("⬅️ Orqaga", callback_data="cat_prev")
-    counter_btn = types.InlineKeyboardButton(f"{index + 1}/{len(items_list)}", callback_data="cat_noop")
-    next_btn = types.InlineKeyboardButton("Keyingi ➡️", callback_data="cat_next")
+    prev_btn = types.InlineKeyboardButton("⬅️ Orqaga", callback_data="fcat_prev")
+    counter_btn = types.InlineKeyboardButton(f"{index + 1}/{len(items_list)}", callback_data="fcat_noop")
+    next_btn = types.InlineKeyboardButton("Keyingi ➡️", callback_data="fcat_next")
     
     if len(items_list) > 1:
         markup.add(prev_btn, counter_btn, next_btn)
 
     try:
-        # ImageKit yoki oddiy URL bo'lsa
         if image_url and (image_url.startswith('http://') or image_url.startswith('https://')):
-            bot.send_photo(
-                chat_id=chat_id,
-                photo=image_url,
-                caption=caption,
-                parse_mode='HTML',
-                reply_markup=markup
-            )
+            bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption, parse_mode='HTML', reply_markup=markup)
         else:
-            # Agar lokal fayl bo'lsa
             image_path = os.path.join(CATALOG_UPLOAD_FOLDER, os.path.basename(image_url or ''))
             if image_url and os.path.isfile(image_path):
                 with open(image_path, 'rb') as photo:
-                    bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo,
-                        caption=caption,
-                        parse_mode='HTML',
-                        reply_markup=markup
-                    )
+                    bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, parse_mode='HTML', reply_markup=markup)
             else:
                 bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=markup)
     except Exception as exc:
-        app.logger.exception('Katalogni slayd qilishda xato: %s', exc)
+        app.logger.exception('Katalog slayd xatosi: %s', exc)
         bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=markup)
 
 
-# Tugmalar bosilganda ishlaydigan handler
-@bot.callback_query_handler(func=lambda call: call.data.startswith('cat_'))
-def catalog_callback_handler(call):
+# Kategoriya ichidagi slayd tugmalari (Oldinga / Orqaga)
+@bot.callback_query_handler(func=lambda call: call.data.startswith('fcat_'))
+def filtered_catalog_callback(call):
     chat_id = call.message.chat.id
-    current_index = catalog_indexes.get(chat_id, 0)
+    session_data = catalog_sessions.get(chat_id)
     
-    conn = get_db_connection()
-    items_list = conn.execute('SELECT id, name, price, description, image_filename FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
-    conn.close()
-    
-    if not items_list:
-        bot.answer_callback_query(call.id, "Katalog bo'sh!")
+    if not session_data:
+        bot.answer_callback_query(call.id, "Katalog sessiyasi tugagan, qaytadan tanlang.")
         return
+        
+    current_index = session_data['index']
+    items_list = session_data['items']
 
-    if call.data == 'cat_next':
+    if call.data == 'fcat_next':
         current_index += 1
-    elif call.data == 'cat_prev':
+    elif call.data == 'fcat_prev':
         current_index -= 1
-    elif call.data == 'cat_noop':
+    elif call.data == 'fcat_noop':
         bot.answer_callback_query(call.id)
         return
 
-    catalog_indexes[chat_id] = current_index % len(items_list)
+    session_data['index'] = current_index % len(items_list)
     
-    # Eski xabarni o'chirib, yangi mahsulotni rasm bilan chiqaramiz
     try:
         bot.delete_message(chat_id, call.message.message_id)
     except:
         pass
         
-    send_catalog_slide(chat_id, catalog_indexes[chat_id], items_list)
+    send_filtered_catalog_slide(chat_id, session_data['index'])
     bot.answer_callback_query(call.id)
 
 
