@@ -152,6 +152,15 @@ def safe_number(value, default=0.0, minimum=None, maximum=None):
 
 
 
+def shop_credit_used(conn, shop_name):
+  """Qarzga qo‘shimcha ravishda hali yetkazilmagan buyurtmalarni ham limitga qo‘shadi."""
+  shop = conn.execute('SELECT debt FROM shops WHERE name=?', (shop_name,)).fetchone()
+  if not shop:
+    return 0.0
+  pending = conn.execute("SELECT COALESCE(SUM(total_sum),0) s FROM orders WHERE shop_name=? AND status IN ('Yangi','Otgruzka','Tasdiqlandi','Tayyorlanmoqda')", (shop_name,)).fetchone()
+  return safe_number(shop['debt']) + safe_number(pending['s'] if pending else 0)
+
+
 def normalize_visit_day(value):
     """Tashrif kunlaridagi to'liq nom va qisqa kodlarni yagona hafta kuniga aylantiradi."""
     raw = (value or '').strip().casefold()
@@ -588,6 +597,7 @@ def init_web_db():
            VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent),
     )
+  ensure_business_plus_schema(conn)
   conn.commit()
   conn.close()
 
@@ -2635,6 +2645,18 @@ AGENT_WEBAPP_TEMPLATE = """
     </div>
 
     <div class="card-mobile">
+        <h6 class="fw-bold mb-2">📍 Do‘konga tashrifni GPS bilan qayd etish</h6>
+        <form method="POST" id="agentGpsForm">
+            <input type="hidden" name="action" value="mark_visit">
+            <select name="shop_id" class="form-select mb-2" required><option value="">Do‘konni tanlang</option>{% for s in shops %}<option value="{{s['id']}}">{{s['name']}}</option>{% endfor %}</select>
+            <input type="hidden" name="latitude" id="agentLat"><input type="hidden" name="longitude" id="agentLon">
+            <input type="number" name="interval_days" class="form-control mb-2" min="1" max="60" value="7" placeholder="Keyingi tashrif (kun)">
+            <button type="button" class="btn btn-outline-primary w-100 mb-2" onclick="agentGPS()">GPS joylashuvni olish</button>
+            <button class="btn btn-success w-100">Tashrifni tasdiqlash</button><small id="agentGpsStatus" class="text-muted d-block mt-2">GPS olish uchun ruxsat bering.</small>
+        </form>
+    </div>
+    <script>function agentGPS(){let s=document.getElementById('agentGpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('agentLat').value=p.coords.latitude;document.getElementById('agentLon').value=p.coords.longitude;s.textContent='GPS olindi';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script>
+    <div class="card-mobile">
         <h6 class="fw-bold text-primary mb-3"><i class="bi bi-cart-plus me-1"></i>Yangi Buyurtma Kiritish</h6>
         <form method="POST">
             <div class="mb-3">
@@ -2788,6 +2810,7 @@ def agent_webapp(tg_id):
     if not verify_staff_link(tg_id):
         return "Havola eskirgan yoki imzosi mos emas. Telegram botga qayting va '🌐 Web kabinetim' tugmasini qayta bosing.", 403
     conn = get_db_connection()
+    ensure_business_plus_schema(conn)
     user = conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
     if not user:
         conn.close()
@@ -2809,10 +2832,14 @@ def agent_webapp(tg_id):
             now_dt = datetime.now()
             last_visit = now_dt.strftime('%Y-%m-%d %H:%M')
             next_visit = (now_dt + timedelta(days=interval_days)).strftime('%Y-%m-%d')
-            conn.execute('UPDATE shops SET last_visit = ?, next_visit_date = ? WHERE id = ?', (last_visit, next_visit, shop_id))
-            conn.execute('INSERT INTO shop_visits (shop_id, shop_name, agent_name, visit_date, next_visit_date, source) VALUES (?,?,?,?,?,?)',
-                         (shop_id, shop['name'], agent_name, last_visit, next_visit, 'manual'))
-            log_audit(conn, 'Agent do‘konga tashrifni qayd etdi', 'shop', shop_id, f"agent={agent_name}; tg_id={tg_id}; keyingi_tashrif={next_visit}")
+            lat=safe_number(request.form.get('latitude'),None); lon=safe_number(request.form.get('longitude'),None)
+            if lat is None or lon is None or not(-90<=lat<=90 and -180<=lon<=180):
+                conn.close(); return 'GPS joylashuv olinmadi. Avval GPS tugmasini bosing.',400
+            conn.execute('UPDATE shops SET last_visit = ?, next_visit_date = ?, latitude=?, longitude=? WHERE id = ?', (last_visit, next_visit, lat, lon, shop_id))
+            conn.execute('INSERT INTO shop_visits (shop_id, shop_name, agent_name, visit_date, next_visit_date, source, latitude, longitude) VALUES (?,?,?,?,?,?,?,?)',
+                         (shop_id, shop['name'], agent_name, last_visit, next_visit, 'agent GPS', lat, lon))
+            conn.execute('INSERT INTO staff_locations (tg_id,staff_name,latitude,longitude,recorded_at,purpose) VALUES (?,?,?,?,?,?)',(tg_id,agent_name,lat,lon,last_visit,'Do‘kon tashrifi'))
+            log_audit(conn, 'Agent GPS tashrifini qayd etdi', 'shop', shop_id, f"agent={agent_name}; tg_id={tg_id}; gps={lat},{lon}; keyingi_tashrif={next_visit}")
             conn.commit()
             conn.close()
             return redirect(make_staff_web_url(tg_id))
@@ -2853,6 +2880,11 @@ def agent_webapp(tg_id):
                 record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Agent webapp')
                 excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
                 
+        shop_credit=conn.execute('SELECT debt,credit_limit FROM shops WHERE name=?',(shop_name,)).fetchone()
+        if shop_credit and safe_number(shop_credit['credit_limit'])>0 and shop_credit_used(conn, shop_name)+total_sum>safe_number(shop_credit['credit_limit']):
+            used_credit=shop_credit_used(conn, shop_name); limit_value=safe_number(shop_credit['credit_limit'])
+            conn.rollback(); conn.close()
+            return f"Do‘kon kredit limitidan oshib ketadi. Qarz va kutilayotgan buyurtmalar: {used_credit:,.0f} so‘m; limit: {limit_value:,.0f} so‘m.",400
         bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
         cursor = conn.cursor()
         cursor.execute(
@@ -3175,6 +3207,7 @@ def finish_order_with_comment(message):
     return
 
   conn = get_db_connection()
+  ensure_business_plus_schema(conn)
   total_sum, cost_total, items_text, p_type = 0, 0, '', data['price_type']
   excel_cart_items = []
 
@@ -3207,6 +3240,13 @@ def finish_order_with_comment(message):
     excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   shop_name = data['shop_name']
+  shop_credit = conn.execute('SELECT debt, credit_limit FROM shops WHERE name=?', (shop_name,)).fetchone()
+  if shop_credit and safe_number(shop_credit['credit_limit']) > 0 and shop_credit_used(conn, shop_name) + total_sum > safe_number(shop_credit['credit_limit']):
+    used_credit = shop_credit_used(conn, shop_name)
+    limit_value = safe_number(shop_credit['credit_limit'])
+    conn.rollback(); conn.close()
+    bot.send_message(message.chat.id, f"❌ Do‘kon kredit limitidan oshib ketadi. Qarz va kutilayotgan buyurtmalar: {used_credit:,.0f} so‘m; limit: {limit_value:,.0f} so‘m. Avval to‘lov qabul qiling.")
+    return
 
   agent_res = conn.execute(
       'SELECT name FROM users WHERE tg_id = ?', (uid,)
@@ -3408,6 +3448,7 @@ HTML_TEMPLATE = """
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-kassa" type="button"><i class="bi bi-wallet2"></i>Kassa</button>
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-reports" type="button"><i class="bi bi-file-earmark-bar-graph"></i>Hisobot</button>
         <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-catalog" type="button"><i class="bi bi-images"></i>Katalog</button>
+        <a class="nav-link text-decoration-none" href="/business_plus"><i class="bi bi-stars"></i>Biznes+ Modullar</a>
     </div>
     <div class="flex-grow-1">
         <div class="top-bar d-flex justify-content-between align-items-center">
@@ -4921,6 +4962,7 @@ def web_add_order():
   qtys = request.form.getlist('qty')
 
   conn = get_db_connection()
+  ensure_business_plus_schema(conn)
   total_sum = 0
   cost_total = 0
   items_text = ''
@@ -4951,6 +4993,12 @@ def web_add_order():
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
   final_sum = max(0, total_sum - discount)
+  shop_credit = conn.execute('SELECT debt, credit_limit FROM shops WHERE name=?', (shop_name,)).fetchone() if shop_name else None
+  if shop_credit and safe_number(shop_credit['credit_limit']) > 0 and shop_credit_used(conn, shop_name) + final_sum > safe_number(shop_credit['credit_limit']):
+    limit_value = safe_number(shop_credit['credit_limit'])
+    debt_value = shop_credit_used(conn, shop_name)
+    conn.rollback(); conn.close()
+    return f"Do‘kon kredit limitidan oshib ketadi. Joriy qarz: {debt_value:,.0f} so‘m; limit: {limit_value:,.0f} so‘m.", 400
   bugun = datetime.now().strftime('%Y-%m-%d %H:%M')
 
   cursor = conn.cursor()
@@ -5381,6 +5429,149 @@ def run_visit_reminders():
         time.sleep(45)
 
 
+# ================= XOJI AKA: KENGAYTIRILGAN BIZNES MODULLARI =================
+BUSINESS_PLUS_TEMPLATE = r'''<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xoji Aka Biznes+</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#f4f6fb}.card{border:0;border-radius:14px;box-shadow:0 4px 18px #15234a0d}.table{font-size:13px}</style></head><body><main class="container-fluid p-3 p-lg-4"><div class="d-flex justify-content-between flex-wrap mb-3"><div><h3>⭐ Xoji Aka — Biznes+ boshqaruv</h3><div class="text-muted">12 ta kengaytirilgan modul | {{today}}</div></div><a href="/" class="btn btn-outline-secondary">← Asosiy panel</a></div>
+<div class="row g-3 mb-3">{% for title,val in [('Bugungi tushum',revenue),('Taxminiy sof foyda',revenue-cost-exp),('Jami do‘kon qarzi',debt),('Buyurtmalar',orders|length)] %}<div class="col-6 col-xl-3"><div class="card p-3"><div class="text-muted">{{title}}</div><h4>{{'{:,.0f}'.format(val)}} {% if not loop.last %}so‘m{% else %}ta{% endif %}</h4></div></div>{% endfor %}</div>
+<div class="row g-3"><div class="col-xl-6"><div class="card p-3"><h5>1–3. Moliyaviy nazorat, kredit limiti va xarajatlar</h5><div class="table-responsive"><table class="table table-sm"><tr><th>Do‘kon</th><th>Qarz</th><th>Limit (0=cheksiz)</th><th></th></tr>{% for sh in shops %}<tr><td>{{sh.name}}</td><td>{{'{:,.0f}'.format(sh.debt or 0)}}</td><td><form method="post" action="/business_plus/credit" class="d-flex gap-1"><input type="hidden" name="shop_id" value="{{sh.id}}"><input class="form-control form-control-sm" style="width:110px" name="credit_limit" type="number" min="0" value="{{sh.credit_limit or 0}}"><button class="btn btn-sm btn-primary">Saqlash</button></form></td><td><a href="/shop_turnover/{{sh.id}}">CRM</a></td></tr>{% endfor %}</table></div><b>Joriy oy xarajatlari</b>{% for e in expenses %}<div class="d-flex justify-content-between border-bottom py-1"><span>{{e.category}}</span><b>{{'{:,.0f}'.format(e.total)}} so‘m</b></div>{% endfor %}</div></div>
+<div class="col-12"><div class="card p-3"><h5>Do‘konlar CRM — savdo tarixi</h5><div class="table-responsive"><table class="table table-sm"><tr><th>Do‘kon</th><th>Buyurtmalar</th><th>Umumiy oborot</th><th>Qarz</th><th></th></tr>{% for c in crm %}<tr><td>{{c.shop.name}}</td><td>{{c.count}}</td><td>{{'{:,.0f}'.format(c.turnover)}} so‘m</td><td>{{'{:,.0f}'.format(c.shop.debt or 0)}} so‘m</td><td><a href="/shop_turnover/{{c.shop.id}}">Batafsil tarix</a></td></tr>{% endfor %}</table></div></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>4. Agentlar reytingi</h5><table class="table table-sm"><tr><th>#</th><th>Agent</th><th>Savdo</th></tr>{% for name,total in ranking %}<tr><td>{{loop.index}}</td><td>{{name}}</td><td>{{'{:,.0f}'.format(total)}} so‘m</td></tr>{% else %}<tr><td colspan="3">Bugun savdo yo‘q</td></tr>{% endfor %}</table><a href="/#tab-dashboard">Agent mahsulotlari kesimidagi jadval</a></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>5–6. Do‘kon CRM va GPS tashrif</h5><form method="post" action="/business_plus/gps_visit" id="gpsForm" class="row g-2"><div class="col-7"><select name="shop_id" class="form-select" required><option value="">Do‘kon tanlang</option>{% for sh in shops %}<option value="{{sh.id}}">{{sh.name}}</option>{% endfor %}</select></div><div class="col-5"><input class="form-control" type="number" name="interval_days" value="7" min="1" max="60"></div><input type="hidden" name="latitude" id="lat"><input type="hidden" name="longitude" id="lon"><div class="col-12 d-flex gap-2"><button type="button" class="btn btn-outline-primary" onclick="gps()">📍 GPS olish</button><button class="btn btn-success">Tashrifni saqlash</button></div><small id="gpsStatus">GPS ruxsatini bering.</small></form><hr><b>So‘nggi tashriflar</b>{% for v in visits %}<div class="border-bottom py-1">{{v.shop_name}} — {{v.agent_name}} — {{v.visit_date}} {% if v.latitude and v.longitude %}<a target="_blank" href="https://maps.google.com/?q={{v.latitude}},{{v.longitude}}">Xarita</a>{% endif %}</div>{% else %}<small>Hali tashrif yo‘q</small>{% endfor %}</div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>7. Ishlab chiqarish rejasi</h5><table class="table table-sm"><tr><th>Mahsulot</th><th>Kerak</th><th>Ombor</th><th>Yetishmaydi</th></tr>{% for name,qty in production.items() %}{% set p=product_map.get(name) %}<tr><td>{{name}}</td><td>{{'%.2f'|format(qty)}}</td><td>{{p.stock if p else 0}}</td><td class="text-danger">{{[qty-(p.stock if p else 0),0]|max}}</td></tr>{% else %}<tr><td colspan="4">Faol buyurtma yo‘q</td></tr>{% endfor %}</table></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>8. Shtrix-kod va kam qoldiq</h5><form method="post" action="/business_plus/barcode" class="row g-2"><div class="col-6"><select class="form-select" name="product_id" required><option value="">Mahsulot</option>{% for p in products %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="barcode" placeholder="Shtrix-kod" required></div><div class="col-6"><input class="form-control" name="min_stock" type="number" min="0" step="0.01" placeholder="Minimal qoldiq"></div><div class="col-6"><button class="btn btn-primary w-100">Saqlash</button></div></form><form method="get" action="/business_plus/scan" class="d-flex gap-2 mt-2"><input class="form-control" name="barcode" placeholder="Skaner qilingan kod"><button class="btn btn-dark">Topish</button></form><hr>{% for p in low %}<div class="text-danger">{{p.name}} — {{p.stock}} (min {{p.min_stock}})</div>{% else %}<small>Kam qoldiq yo‘q yoki minimal limit belgilanmagan.</small>{% endfor %}</div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>9. Partiya va yaroqlilik muddati</h5><form method="post" action="/business_plus/batch" class="row g-2"><div class="col-6"><select class="form-select" name="product_name" required><option value="">Mahsulot</option>{% for p in products %}<option>{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="qty" type="number" min="0.01" step="0.01" placeholder="Miqdor" required></div><div class="col-4"><input class="form-control" name="batch_code" placeholder="Partiya №"></div><div class="col-4"><input class="form-control" name="produced_date" type="date"></div><div class="col-4"><input class="form-control" name="expiry_date" type="date"></div><div class="col-6"><input class="form-control" name="unit_cost" type="number" min="0" placeholder="Tannarx"></div><div class="col-6"><button class="btn btn-success w-100">Partiyani kirim qilish</button></div></form><hr><b>30 kun ichida muddati tugaydigan partiyalar</b>{% for b in batches %}<div class="text-danger">{{b.product_name}} — {{b.expiry_date}} — {{b.qty}}</div>{% else %}<small>Yaqin muddatli partiya yo‘q</small>{% endfor %}</div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>10. Yetkazib berish marshruti</h5><p>GPS koordinatasi kiritilgan do‘konlar bo‘yicha taxminiy yaqin nuqtalar ketma-ketligi.</p><a class="btn btn-outline-primary" href="/business_plus/route">Marshrutni hisoblash</a><small class="d-block mt-2">Yo‘l holati va tirbandlik hisoblanmaydi.</small></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>11. Telegram kunlik hisoboti</h5><p>Admin Telegramiga tushum, taxminiy foyda, buyurtmalar va qarz yuboriladi.</p><form method="post" action="/business_plus/report_settings" class="d-flex gap-2"><select class="form-select" name="enabled"><option value="1" {% if settings.enabled %}selected{% endif %}>Yoqilgan</option><option value="0" {% if not settings.enabled %}selected{% endif %}>O‘chirilgan</option></select><input class="form-control" type="time" name="send_time" value="{{settings.send_time}}"><button class="btn btn-primary">Saqlash</button></form><small>Render’da bot tokeni va ADMIN_ID to‘g‘ri sozlangan bo‘lishi kerak.</small></div></div>
+<div class="col-12"><div class="card p-3"><h5>12. Xoji Aka aqlli yordamchisi</h5><p>Ma’lumotlar bazasidagi raqamlar asosida savollarga javob beradi.</p><form method="post" action="/business_plus/assistant" class="d-flex gap-2"><input class="form-control" name="question" placeholder="Bugungi foyda, agent savdosi yoki eng qarzdor do‘konlar?" required><button class="btn btn-dark">Javob olish</button></form></div></div></div></main><script>function gps(){let s=document.getElementById('gpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('lat').value=p.coords.latitude;document.getElementById('lon').value=p.coords.longitude;s.textContent='GPS olindi';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script></body></html>
+'''
+
+def ensure_business_plus_schema(conn):
+    for sql in [
+        "ALTER TABLE shops ADD COLUMN credit_limit REAL DEFAULT 0",
+        "ALTER TABLE shops ADD COLUMN latitude REAL", "ALTER TABLE shops ADD COLUMN longitude REAL",
+        "ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT ''", "ALTER TABLE products ADD COLUMN min_stock REAL DEFAULT 0",
+        "ALTER TABLE shop_visits ADD COLUMN latitude REAL", "ALTER TABLE shop_visits ADD COLUMN longitude REAL",
+    ]:
+        try: conn.execute(sql)
+        except sqlite3.OperationalError: pass
+    conn.execute('''CREATE TABLE IF NOT EXISTS stock_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, product_name TEXT NOT NULL, batch_code TEXT DEFAULT '', qty REAL NOT NULL DEFAULT 0, produced_date TEXT DEFAULT '', expiry_date TEXT DEFAULT '', unit_cost REAL DEFAULT 0, created_at TEXT NOT NULL, actor TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS staff_locations (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, staff_name TEXT, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy REAL DEFAULT 0, recorded_at TEXT NOT NULL, purpose TEXT DEFAULT 'Ish tashrifi')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS daily_report_settings (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER DEFAULT 1, send_time TEXT DEFAULT '20:00')''')
+    conn.execute("INSERT OR IGNORE INTO daily_report_settings (id,enabled,send_time) VALUES (1,1,'20:00')")
+    conn.commit()
+
+def _plus_ok():
+    return bool(session.get('logged_in'))
+
+@app.route('/business_plus')
+def business_plus():
+    if not _plus_ok(): return redirect(url_for('login'))
+    today=datetime.now().strftime('%Y-%m-%d'); conn=get_db_connection(); ensure_business_plus_schema(conn)
+    orders=conn.execute("SELECT * FROM orders WHERE substr(date,1,10)=? AND COALESCE(status,'') NOT IN ('Bekor','Bekor qilindi')",(today,)).fetchall()
+    revenue=sum(safe_number(o['total_sum']) for o in orders); cost=sum(safe_number(o['cost_total']) for o in orders)
+    exp=conn.execute("SELECT COALESCE(SUM(amount),0) s FROM expenses WHERE substr(date,1,10)=?",(today,)).fetchone()['s']
+    debt=conn.execute('SELECT COALESCE(SUM(debt),0) s FROM shops').fetchone()['s']
+    shops=conn.execute('SELECT * FROM shops ORDER BY debt DESC,name').fetchall(); products=conn.execute('SELECT * FROM products ORDER BY name').fetchall()
+    batches=conn.execute("SELECT * FROM stock_batches WHERE expiry_date!='' AND expiry_date<=? ORDER BY expiry_date",((datetime.now()+timedelta(days=30)).strftime('%Y-%m-%d'),)).fetchall()
+    visits=conn.execute('SELECT * FROM shop_visits ORDER BY id DESC LIMIT 30').fetchall()
+    settings=conn.execute('SELECT * FROM daily_report_settings WHERE id=1').fetchone()
+    expenses=conn.execute("SELECT COALESCE(NULLIF(reason,''),'Boshqa') category,SUM(amount) total FROM expenses WHERE substr(date,1,7)=? GROUP BY category ORDER BY total DESC",(today[:7],)).fetchall()
+    ranking={}; production={}
+    for o in orders: ranking[o['agent_name'] or 'Noma’lum']=ranking.get(o['agent_name'] or 'Noma’lum',0)+safe_number(o['total_sum'])
+    for o in conn.execute("SELECT items_text FROM orders WHERE status IN ('Yangi','Tasdiqlandi','Tayyorlanmoqda')"):
+        for item in parse_order_item_lines(o['items_text']): production[item['name']]=production.get(item['name'],0)+item['qty']
+    low=[p for p in products if safe_number(p['min_stock'])>0 and safe_number(p['stock'])<=safe_number(p['min_stock'])]
+    crm=[]
+    for sh in shops:
+        cnt=conn.execute("SELECT COUNT(*) n,COALESCE(SUM(total_sum),0) s FROM orders WHERE shop_name=? AND status!='Bekor'",(sh['name'],)).fetchone()
+        crm.append({'shop':sh,'count':cnt['n'],'turnover':cnt['s']})
+    product_map={p['name']:dict(p) for p in products}; conn.close()
+    return render_template_string(BUSINESS_PLUS_TEMPLATE,today=today,revenue=revenue,cost=cost,exp=exp,debt=debt,orders=orders,shops=shops,products=products,batches=batches,visits=visits,settings=settings,expenses=expenses,ranking=sorted(ranking.items(),key=lambda x:x[1],reverse=True),production=production,low=low,crm=crm,product_map=product_map)
+
+@app.route('/business_plus/credit',methods=['POST'])
+def business_plus_credit():
+    if not _plus_ok(): return redirect(url_for('login'))
+    sid=int(safe_number(request.form.get('shop_id'),0,minimum=1)); limit=safe_number(request.form.get('credit_limit'),0,minimum=0)
+    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE shops SET credit_limit=? WHERE id=?',(limit,sid)); log_audit(conn,'Kredit limiti o‘zgartirildi','shop',sid,str(limit)); conn.commit(); conn.close(); return redirect(url_for('business_plus'))
+
+@app.route('/business_plus/barcode',methods=['POST'])
+def business_plus_barcode():
+    if not _plus_ok(): return redirect(url_for('login'))
+    pid=int(safe_number(request.form.get('product_id'),0,minimum=1)); code=(request.form.get('barcode') or '').strip(); minimum=safe_number(request.form.get('min_stock'),0,minimum=0)
+    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE products SET barcode=?,min_stock=? WHERE id=?',(code,minimum,pid)); conn.commit(); conn.close(); return redirect(url_for('business_plus'))
+
+@app.route('/business_plus/scan')
+def business_plus_scan():
+    if not _plus_ok(): return redirect(url_for('login'))
+    code=(request.args.get('barcode') or '').strip(); conn=get_db_connection(); ensure_business_plus_schema(conn); p=conn.execute('SELECT * FROM products WHERE barcode=?',(code,)).fetchone(); conn.close()
+    if not p: return f'<p>Shtrix-kod topilmadi: {code}</p><a href="/business_plus">Orqaga</a>',404
+    return f'<h2>{p["name"]}</h2><p>Qoldiq: {p["stock"]}</p><p>Narx: {p["optom_price"]}</p><a href="/business_plus">Orqaga</a>'
+
+@app.route('/business_plus/batch',methods=['POST'])
+def business_plus_batch():
+    if not _plus_ok(): return redirect(url_for('login'))
+    name=(request.form.get('product_name') or '').strip(); qty=safe_number(request.form.get('qty'),0,minimum=0.01); code=(request.form.get('batch_code') or '').strip(); produced=request.form.get('produced_date') or ''; expiry=request.form.get('expiry_date') or ''; unit=safe_number(request.form.get('unit_cost'),0,minimum=0)
+    conn=get_db_connection(); ensure_business_plus_schema(conn); p=conn.execute('SELECT id FROM products WHERE name=?',(name,)).fetchone()
+    if not p: conn.close(); return 'Mahsulot topilmadi',404
+    stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor) VALUES(?,?,?,?,?,?,?,?)',(name,code,qty,produced,expiry,unit,stamp,current_actor())); conn.execute('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=?',(qty,p['id'])); record_stock_movement(conn,name,qty,'Ishlab chiqarish partiyasi',code or expiry); conn.commit(); conn.close(); return redirect(url_for('business_plus'))
+
+@app.route('/business_plus/gps_visit',methods=['POST'])
+def business_plus_gps_visit():
+    if not _plus_ok(): return redirect(url_for('login'))
+    sid=int(safe_number(request.form.get('shop_id'),0,minimum=1)); lat=safe_number(request.form.get('latitude'),None); lon=safe_number(request.form.get('longitude'),None); days=int(safe_number(request.form.get('interval_days'),7,minimum=1,maximum=60))
+    if lat is None or lon is None or not(-90<=lat<=90 and -180<=lon<=180): return 'GPS koordinatasi olinmagan yoki noto‘g‘ri.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn); sh=conn.execute('SELECT * FROM shops WHERE id=?',(sid,)).fetchone()
+    if not sh: conn.close(); return 'Do‘kon topilmadi',404
+    now=datetime.now(); stamp=now.strftime('%Y-%m-%d %H:%M'); nxt=(now+timedelta(days=days)).strftime('%Y-%m-%d')
+    conn.execute('UPDATE shops SET latitude=?,longitude=?,last_visit=?,next_visit_date=? WHERE id=?',(lat,lon,stamp,nxt,sid)); conn.execute('INSERT INTO shop_visits(shop_id,shop_name,agent_name,visit_date,next_visit_date,source,latitude,longitude) VALUES(?,?,?,?,?,?,?,?)',(sid,sh['name'],current_actor(),stamp,nxt,'GPS',lat,lon)); conn.execute('INSERT INTO staff_locations(staff_name,latitude,longitude,recorded_at,purpose) VALUES(?,?,?,?,?)',(current_actor(),lat,lon,stamp,'Do‘kon tashrifi')); conn.commit(); conn.close(); return redirect(url_for('business_plus'))
+
+@app.route('/business_plus/route')
+def business_plus_route():
+    if not _plus_ok(): return redirect(url_for('login'))
+    conn=get_db_connection(); ensure_business_plus_schema(conn); rows=[dict(x) for x in conn.execute('SELECT id,name,latitude,longitude FROM shops WHERE latitude IS NOT NULL AND longitude IS NOT NULL')]; conn.close()
+    if not rows: return '<p>Marshrut uchun GPS koordinatalari hali yo‘q.</p><a href="/business_plus">Orqaga</a>'
+    import math
+    def d(a,b):
+        a1,o1,a2,o2=map(math.radians,[a['latitude'],a['longitude'],b['latitude'],b['longitude']]); h=math.sin((a2-a1)/2)**2+math.cos(a1)*math.cos(a2)*math.sin((o2-o1)/2)**2; return 6371*2*math.asin(math.sqrt(h))
+    route=[rows.pop(0)]
+    while rows:
+        n=min(rows,key=lambda x:d(route[-1],x)); rows.remove(n); route.append(n)
+    links=''.join(f'<li>{x["name"]} — <a target="_blank" href="https://maps.google.com/?q={x["latitude"]},{x["longitude"]}">xarita</a></li>' for x in route); coords='/'.join(f'{x["latitude"]},{x["longitude"]}' for x in route)
+    return f'<h2>Taxminiy yetkazib berish marshruti</h2><ol>{links}</ol><a target="_blank" href="https://www.google.com/maps/dir/{coords}">Google Mapsda ochish</a><p>Bu koordinatalar bo‘yicha taxminiy ketma-ketlik, tirbandlik/yo‘l holatini hisoblamaydi.</p><a href="/business_plus">Orqaga</a>'
+
+@app.route('/business_plus/report_settings',methods=['POST'])
+def business_plus_report_settings():
+    if not _plus_ok(): return redirect(url_for('login'))
+    enabled=1 if request.form.get('enabled')=='1' else 0; clock=request.form.get('send_time') or '20:00'
+    try: datetime.strptime(clock,'%H:%M')
+    except ValueError: clock='20:00'
+    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE daily_report_settings SET enabled=?,send_time=? WHERE id=1',(enabled,clock)); conn.commit(); conn.close(); return redirect(url_for('business_plus'))
+
+@app.route('/business_plus/assistant',methods=['POST'])
+def business_plus_assistant():
+    if not _plus_ok(): return redirect(url_for('login'))
+    q=(request.form.get('question') or '').lower(); today=datetime.now().strftime('%Y-%m-%d'); conn=get_db_connection()
+    if 'qarz' in q:
+        rows=conn.execute('SELECT name,debt FROM shops WHERE debt>0 ORDER BY debt DESC LIMIT 10').fetchall(); ans='Eng qarzdor do‘konlar:\n'+'\n'.join(f"{r['name']}: {safe_number(r['debt']):,.0f} so‘m" for r in rows)
+    elif any(w in q for w in ('agent','savdo','sotdi')):
+        rows=conn.execute("SELECT agent_name,SUM(total_sum) total FROM orders WHERE substr(date,1,10)=? AND status!='Bekor' GROUP BY agent_name ORDER BY total DESC",(today,)).fetchall(); ans='Bugungi agentlar savdosi:\n'+'\n'.join(f"{r['agent_name']}: {safe_number(r['total']):,.0f} so‘m" for r in rows)
+    elif any(w in q for w in ('foyda','tushum','daromad')):
+        r=conn.execute("SELECT COALESCE(SUM(total_sum),0) t,COALESCE(SUM(cost_total),0) c FROM orders WHERE substr(date,1,10)=? AND status!='Bekor'",(today,)).fetchone(); e=conn.execute("SELECT COALESCE(SUM(amount),0) e FROM expenses WHERE substr(date,1,10)=?",(today,)).fetchone()['e']; ans=f"Bugungi tushum: {safe_number(r['t']):,.0f} so‘m\nTannarx: {safe_number(r['c']):,.0f} so‘m\nXarajat: {safe_number(e):,.0f} so‘m\nTaxminiy foyda: {safe_number(r['t'])-safe_number(r['c'])-safe_number(e):,.0f} so‘m"
+    else: ans='Qarz, bugungi agent savdosi yoki bugungi foyda/tushum haqida so‘rashingiz mumkin.'
+    conn.close(); return render_template_string('<!doctype html><meta charset="utf-8"><h2>🤖 Xoji Aka yordamchisi</h2><pre>{{ans}}</pre><a href="/business_plus">Orqaga</a>',ans=ans)
+
+def run_daily_business_reports():
+    sent=None
+    while True:
+        try:
+            now=datetime.now(timezone(timedelta(hours=5))); day=now.strftime('%Y-%m-%d'); conn=get_db_connection(); ensure_business_plus_schema(conn); st=conn.execute('SELECT * FROM daily_report_settings WHERE id=1').fetchone(); conn.close()
+            if st and st['enabled'] and now.strftime('%H:%M')>=st['send_time'] and sent!=day:
+                conn=get_db_connection(); r=conn.execute("SELECT COALESCE(SUM(total_sum),0) t,COALESCE(SUM(cost_total),0) c,COUNT(*) n FROM orders WHERE substr(date,1,10)=? AND status!='Bekor'",(day,)).fetchone(); e=conn.execute("SELECT COALESCE(SUM(amount),0) e FROM expenses WHERE substr(date,1,10)=?",(day,)).fetchone()['e']; debt=conn.execute('SELECT COALESCE(SUM(debt),0) d FROM shops').fetchone()['d']; conn.close()
+                msg=f"📊 XOJI AKA — KUNLIK HISOBOT\nTushum: {safe_number(r['t']):,.0f} so‘m\nTaxminiy foyda: {safe_number(r['t'])-safe_number(r['c'])-safe_number(e):,.0f} so‘m\nBuyurtmalar: {r['n']} ta\nJami qarz: {safe_number(debt):,.0f} so‘m"
+                bot.send_message(ADMIN_ID,msg); sent=day
+        except Exception: app.logger.exception('Kunlik hisobot yuborishda xato')
+        time.sleep(30)
+
+
 if __name__ == '__main__':
     init_web_db()
     create_database_backup()
@@ -5393,6 +5584,7 @@ if __name__ == '__main__':
         bot_thread = threading.Thread(target=run_bot, daemon=True)
         bot_thread.start()
         threading.Thread(target=run_visit_reminders, daemon=True).start()
+        threading.Thread(target=run_daily_business_reports, daemon=True).start()
     else:
         print('DIQQAT: BOT_TOKEN sozlanmagan. Web-panel ishlaydi, Telegram bot polling ishga tushmaydi.')
 
