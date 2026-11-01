@@ -40,7 +40,7 @@ SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
 # TeleBot dekoratorlari token bo'lmaganda ham yuklanishi uchun vaqtinchalik qiymat.
 # Haqiqiy polling faqat BOT_TOKEN berilganda ishga tushadi.
-bot = telebot.TeleBot(BOT_TOKEN or "8573337094:AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps")
+bot = telebot.TeleBot(BOT_TOKEN or "000000:PLACEHOLDER_TOKEN")
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_NAME = os.environ.get('DB_NAME', os.path.join(BASE_DIR, 'xoji_aka_factory.db'))  # Standart holatda aynan shu fayl yonidagi eski baza ishlatiladi
@@ -2609,11 +2609,16 @@ def staff_webapp(tg_id):
         orders = []
         shops = []
         territory = user['territory'] or ''
-    else:
+    elif role_key == 'admin':
         orders = conn.execute('SELECT * FROM orders ORDER BY id DESC LIMIT 50').fetchall()
         shops = conn.execute('SELECT * FROM shops ORDER BY name').fetchall()
         territory = user['territory'] or ''
-    products = conn.execute('SELECT * FROM products ORDER BY name').fetchall() if role_key in ('zavsklad','sex') else []
+    else:
+        # Noma'lum yoki hali belgilanmagan rolga umumiy ma'lumotlar ochilmaydi.
+        orders = []
+        shops = []
+        territory = user['territory'] or ''
+    products = conn.execute('SELECT * FROM products ORDER BY name').fetchall() if role_key in ('zavsklad','sex','admin') else []
     payments = conn.execute('SELECT * FROM payment_requests WHERE ekspeditor_name = ? ORDER BY id DESC LIMIT 30', (user['name'],)).fetchall() if role_key == 'ekspeditor' else []
     conn.close()
     role_labels = {'agent':'Agent kabineti','zavsklad':'Zavsklad kabineti','ekspeditor':'Ekspeditor kabineti','sex':'Sex xodimi kabineti','admin':'Admin kabineti'}
@@ -3419,22 +3424,24 @@ HTML_TEMPLATE = """
         .product-row { cursor: pointer; }
         .product-row:hover { background-color: #f1f5f9 !important; }
         @media (max-width: 768px) {
-        .d-flex { flex-direction: column !important; }
-        .sidebar { width: 100% !important; min-height: auto !important; }
-        .sidebar .nav { flex-direction: row; overflow-x: auto; padding: 5px; }
-        .sidebar .nav-link { font-size: 10px; padding: 8px 10px; margin: 2px; }
+        .app-shell { flex-direction: column !important; }
+        .sidebar { width: 100% !important; min-height: auto !important; flex-direction: row !important; align-items: center; overflow-x: auto; white-space: nowrap; padding: 4px; }
+        .sidebar .nav-link { flex: 0 0 auto; font-size: 10px; padding: 8px 10px; margin: 2px; }
         .sidebar .nav-link i { font-size: 16px; margin-bottom: 0; }
         .brand-logo-container { display: none; }
-        .top-bar { flex-direction: column; gap: 10px; align-items: stretch !important; }
-        .top-bar form { width: 100%; flex-wrap: wrap; }
+        .top-bar { flex-direction: column; gap: 10px; align-items: stretch !important; padding: 12px; }
+        .top-bar > div:last-child { flex-direction: row !important; flex-wrap: wrap; align-items: center; }
+        .top-bar form { width: auto; max-width: 100%; flex-wrap: wrap; }
+        .top-bar input[type="date"] { width: 125px !important; }
         .stat-box { margin-bottom: 10px; }
+        .card-glass { padding-left: 12px !important; padding-right: 12px !important; }
     }
     .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table.table { white-space: nowrap; }
     </style>
 </head>
 <body>
-<div class="d-flex">
+<div class="app-shell d-flex">
     <div class="sidebar d-flex flex-column flex-shrink-0 nav nav-pills" id="v-pills-tab" role="tablist">
         <div class="brand-logo-container">
             <div class="brand-xa">XA</div>
@@ -3456,6 +3463,8 @@ HTML_TEMPLATE = """
             <div class="fw-bold text-dark fs-6"><i class="bi bi-shield-check text-primary me-2"></i>Boshqaruv Markazi</div>
             <div class="d-flex align-items-center gap-2">
                 <a href="/logout" class="btn btn-sm btn-outline-danger fw-bold"><i class="bi bi-box-arrow-right me-1"></i>Chiqish</a>
+                <form method="GET" action="/global_search" class="d-flex gap-1 m-0"><input class="form-control form-control-sm" name="q" placeholder="Do‘kon, mahsulot, buyurtma..." style="width:210px" required><button class="btn btn-sm btn-outline-primary">Qidirish</button></form>
+                <a href="/audit_history" class="btn btn-sm btn-outline-dark">📜 Harakatlar tarixi</a>
                 <a href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Excelga Yuklab Olish</a>
                 
                 <form method="GET" action="/" class="d-flex align-items-center gap-1 m-0 bg-light p-1 rounded border">
@@ -3491,6 +3500,7 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                     </div>
+                    <div class="card-glass p-3 mb-4 border-start border-4 border-warning"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h6 class="fw-bold mb-0">🔔 Boshqaruv ogohlantirishlari</h6><span class="badge bg-warning text-dark">{{ dashboard_alert_count }} ta e’tibor talab qiladi</span></div><div class="row g-2 mt-1"><div class="col-md-4"><a class="text-decoration-none" href="/#tab-inventory">📦 Kam qoldiq: <b>{{dashboard_low_products|length}}</b></a></div><div class="col-md-4">⏳ 30 kun ichida muddati tugaydigan partiyalar: <b>{{dashboard_batches|length}}</b></div><div class="col-md-4">🏪 Kechikkan do‘kon tashriflari: <b>{{overdue_visits_count}}</b></div></div></div>
                     <div class="row g-4">
                         <div class="col-md-5">
                             <div class="card-glass p-4 h-100 d-flex flex-column align-items-center justify-content-center">
@@ -3690,7 +3700,15 @@ HTML_TEMPLATE = """
                     <div class="row g-4">
                         <div class="col-md-5">
                             <div class="card-glass p-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-box-arrow-in-down me-2 text-primary"></i>Tovar Kirim / Perexod</h5>
+                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                    <h5 class="fw-bold mb-0"><i class="bi bi-truck me-2 text-primary"></i>Postavshikdan partiyaviy kirim</h5>
+                                    <span class="badge bg-success">Asosiy kirim</span>
+                                </div>
+                                <p class="text-muted small mb-3">Bitta postavshik yuborgan bir nechta mahsulotni bitta kirim hujjatida kiriting. Miqdor, kelish narxi, partiya va yaroqlilik muddatini yozing. Saqlangandan keyin hujjatni tahrirlash ham mumkin.</p>
+                                <a href="/stock_receipts" class="btn btn-primary btn-lg w-100"><i class="bi bi-box-arrow-in-down me-2"></i>📥 Yangi partiyaviy kirim</a>
+                                <details class="mt-3 border rounded p-3">
+                                    <summary class="fw-bold" style="cursor:pointer">Tezkor kirim — faqat bitta mahsulot</summary>
+                                    <div class="pt-3">
                                 <form action="/add_stock" method="POST">
                                     <div class="mb-3">
                                         <label class="form-label small fw-bold">Mahsulot:</label>
@@ -3707,8 +3725,10 @@ HTML_TEMPLATE = """
                                     <div class="mb-3"><label class="form-label small fw-bold">Miqdor:</label><input type="number" step="any" name="qty" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Tan narxi:</label><input type="number" step="any" name="cost_price" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Optom narxi:</label><input type="number" step="any" name="optom_price" class="form-control" required></div>
-                                    <button type="submit" class="btn btn-primary w-100">Omborga Saqlash</button>
+                                    <button type="submit" class="btn btn-outline-primary w-100">Bitta mahsulotni tezkor kirim qilish</button>
                                 </form>
+                                    </div>
+                                </details>
                             </div>
                         </div>
                         <div class="col-md-7">
@@ -3769,7 +3789,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div class="tab-pane fade" id="tab-clients">
-                    <div class="card-glass p-3 mb-3"><div class="d-flex justify-content-between flex-wrap gap-2"><h6 class="fw-bold">🏪 Do‘konlar CRM — oborot va qarzdorlik</h6><a href="/business_plus?section=shops">To‘liq CRM</a></div><div class="table-responsive"><table class="table table-sm table-custom"><thead><tr><th>Do‘kon</th><th>Buyurtma</th><th>Oborot</th><th>Qarz</th><th></th></tr></thead><tbody>{% for c in dashboard_shop_crm %}<tr><td>{{c.shop.name}}</td><td>{{c.count}}</td><td>{{"{:,.0f}".format(c.turnover)}} so‘m</td><td>{{"{:,.0f}".format(c.shop.debt or 0)}} so‘m</td><td><a href="/shop_turnover/{{c.shop.id}}">Tarix</a></td></tr>{% endfor %}</tbody></table></div><h6 class="fw-bold mt-3">So‘nggi tashriflar</h6>{% for v in dashboard_shop_visits %}<div class="border-bottom py-1 small">{{v.shop_name}} · {{v.agent_name}} · {{v.visit_date}}</div>{% else %}<small class="text-muted">Tashriflar yo‘q.</small>{% endfor %}</div>
+                    <details class="card-glass p-3 mb-3"><summary class="fw-bold d-flex align-items-center justify-content-between flex-wrap gap-2" style="cursor:pointer;list-style:none"><span>🏪 Do‘konlar CRM — oborot va qarzdorlik</span><span class="btn btn-sm btn-outline-secondary">Bosib ko‘rish / yopish</span></summary><div class="d-flex justify-content-end mt-2"><a href="/business_plus?section=shops">To‘liq CRM</a></div><div class="table-responsive mt-2"><table class="table table-sm table-custom"><thead><tr><th>Do‘kon</th><th>Buyurtma</th><th>Oborot</th><th>Qarz</th><th></th></tr></thead><tbody>{% for c in dashboard_shop_crm %}<tr><td>{{c.shop.name}}</td><td>{{c.count}}</td><td>{{"{:,.0f}".format(c.turnover)}} so‘m</td><td>{{"{:,.0f}".format(c.shop.debt or 0)}} so‘m</td><td><a href="/shop_turnover/{{c.shop.id}}">Tarix</a></td></tr>{% endfor %}</tbody></table></div><h6 class="fw-bold mt-3">So‘nggi tashriflar</h6>{% for v in dashboard_shop_visits %}<div class="border-bottom py-1 small">{{v.shop_name}} · {{v.agent_name}} · {{v.visit_date}}</div>{% else %}<small class="text-muted">Tashriflar yo‘q.</small>{% endfor %}</details>
                     <div class="row g-4 mb-4">
                         <div class="col-md-12">
                             <div class="card-glass p-3 bg-light border">
@@ -4648,6 +4668,7 @@ def operator_dashboard():
       for pending_item in parse_order_item_lines(pending_order['items_text']):
           dashboard_production[pending_item['name']] = dashboard_production.get(pending_item['name'], 0) + pending_item['qty']
   dashboard_product_map = {p['name']: dict(p) for p in products}
+  dashboard_alert_count = len(dashboard_low_products) + len(dashboard_batches) + overdue_visits_count
   conn.close()
 
   return render_template_string(
@@ -4676,6 +4697,8 @@ def operator_dashboard():
       dashboard_low_products=dashboard_low_products,
       dashboard_production=dashboard_production,
       dashboard_product_map=dashboard_product_map,
+      dashboard_alert_count=dashboard_alert_count,
+      overdue_visits_count=overdue_visits_count,
       total_revenue=total_revenue,
       total_cost=total_cost,
       total_expense=exp_sum,
@@ -4698,7 +4721,6 @@ def operator_dashboard():
       stock_retail_value=stock_retail_value,
       product_margin_rows=product_margin_rows,
       visit_alerts=visit_alerts,
-      overdue_visits_count=overdue_visits_count,
       today_iso=today_iso,
       catalog_items=catalog_items,
   )
@@ -5100,6 +5122,7 @@ def login():
             session.clear()
             session['logged_in'] = True
             session['username'] = username
+            session['role'] = 'admin'
             try:
                 conn = get_db_connection()
                 log_audit(conn, 'Web panelga kirish', 'auth', username, 'Admin login muvaffaqiyatli')
@@ -5488,6 +5511,7 @@ BUSINESS_PLUS_TEMPLATE = r'''<!doctype html>
 {% elif section=='shops' %}
 <div class="card p-3"><h5>Do‘konlar CRM — savdo tarixi va qarzdorlik</h5><div class="table-responsive"><table class="table table-sm align-middle"><tr><th>Do‘kon</th><th>Buyurtmalar</th><th>Umumiy oborot</th><th>Qarz</th><th>Oxirgi tashrif</th><th></th></tr>{% for c in crm %}<tr><td>{{c.shop.name}}</td><td>{{c.count}}</td><td>{{'{:,.0f}'.format(c.turnover)}} so‘m</td><td>{{'{:,.0f}'.format(c.shop.debt or 0)}} so‘m</td><td>{{c.shop.last_visit or '—'}}</td><td><a href="/shop_turnover/{{c.shop.id}}">Batafsil tarix</a></td></tr>{% endfor %}</table></div><hr><h6>So‘nggi agent tashriflari</h6>{% for v in visits %}<div class="border-bottom py-2">{{v.shop_name}} — {{v.agent_name}} — {{v.visit_date}} {% if v.latitude and v.longitude %}<a target="_blank" href="https://maps.google.com/?q={{v.latitude}},{{v.longitude}}">Xaritada ko‘rish</a>{% endif %}</div>{% else %}<span class="muted">Hali tashrif qayd etilmagan.</span>{% endfor %}</div>
 {% elif section=='warehouse' %}
+<div class="card p-3 mb-3 border border-primary-subtle"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><h5 class="mb-1">📥 Postavshikdan partiyaviy kirim</h5><div class="muted">Bitta kirim hujjatida bir nechta mahsulot, postavshik va narxlarni kiriting; keyin kirimni tahrirlash mumkin.</div></div><a class="btn btn-primary" href="/stock_receipts">Kirim va postavshiklarni boshqarish</a></div></div>
 <div class="row g-3"><div class="col-xl-6"><div class="card p-3"><h5>Shtrix-kod va minimal qoldiq</h5><form method="post" action="/business_plus/barcode" class="row g-2"><div class="col-6"><select class="form-select" name="product_id" required><option value="">Mahsulot</option>{% for p in products %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="barcode" placeholder="Shtrix-kod" required></div><div class="col-6"><input class="form-control" name="min_stock" type="number" min="0" step="0.01" placeholder="Minimal qoldiq"></div><div class="col-6"><button class="btn btn-primary w-100">Saqlash</button></div></form><form method="get" action="/business_plus/scan" class="d-flex gap-2 mt-3"><input class="form-control" name="barcode" placeholder="Skaner qilingan kod"><button class="btn btn-dark">Topish</button></form><hr><h6>Kam qolgan mahsulotlar</h6>{% for p in low %}<div class="text-danger border-bottom py-1">{{p.name}} — qoldiq {{p.stock}} (minimum {{p.min_stock}})</div>{% else %}<small class="muted">Kam qoldiq yo‘q yoki minimal limit belgilanmagan.</small>{% endfor %}</div></div>
 <div class="col-xl-6"><div class="card p-3"><h5>Partiya va yaroqlilik muddati</h5><form method="post" action="/business_plus/batch" class="row g-2"><div class="col-6"><select class="form-select" name="product_name" required><option value="">Mahsulot</option>{% for p in products %}<option>{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="qty" type="number" min="0.01" step="0.01" placeholder="Miqdor" required></div><div class="col-4"><input class="form-control" name="batch_code" placeholder="Partiya №"></div><div class="col-4"><input class="form-control" name="produced_date" type="date"></div><div class="col-4"><input class="form-control" name="expiry_date" type="date"></div><div class="col-6"><input class="form-control" name="unit_cost" type="number" min="0" placeholder="Tannarx"></div><div class="col-6"><button class="btn btn-success w-100">Partiyani kirim qilish</button></div></form><hr><h6>30 kun ichida muddati tugaydigan partiyalar</h6>{% for b in batches %}<div class="text-danger border-bottom py-1">{{b.product_name}} — {{b.expiry_date}} — {{b.qty}}</div>{% else %}<small class="muted">Yaqin muddatli partiya yo‘q.</small>{% endfor %}</div></div></div>
 {% elif section=='production' %}
@@ -5508,6 +5532,11 @@ def ensure_business_plus_schema(conn):
         try: conn.execute(sql)
         except sqlite3.OperationalError: pass
     conn.execute('''CREATE TABLE IF NOT EXISTS stock_batches (id INTEGER PRIMARY KEY AUTOINCREMENT, product_name TEXT NOT NULL, batch_code TEXT DEFAULT '', qty REAL NOT NULL DEFAULT 0, produced_date TEXT DEFAULT '', expiry_date TEXT DEFAULT '', unit_cost REAL DEFAULT 0, created_at TEXT NOT NULL, actor TEXT DEFAULT '')''')
+    try: conn.execute('ALTER TABLE stock_batches ADD COLUMN receipt_id INTEGER')
+    except sqlite3.OperationalError: pass
+    conn.execute('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, phone TEXT DEFAULT '', note TEXT DEFAULT '', created_at TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS stock_receipts (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER, supplier_name TEXT NOT NULL DEFAULT '', invoice_no TEXT DEFAULT '', receipt_date TEXT NOT NULL, total_amount REAL DEFAULT 0, note TEXT DEFAULT '', actor TEXT DEFAULT '', created_at TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS stock_receipt_items (id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_id INTEGER NOT NULL, product_id INTEGER, product_name TEXT NOT NULL, qty REAL NOT NULL, unit_cost REAL DEFAULT 0, optom_price REAL DEFAULT 0, batch_code TEXT DEFAULT '', produced_date TEXT DEFAULT '', expiry_date TEXT DEFAULT '')''')
     conn.execute('''CREATE TABLE IF NOT EXISTS staff_locations (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, staff_name TEXT, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy REAL DEFAULT 0, recorded_at TEXT NOT NULL, purpose TEXT DEFAULT 'Ish tashrifi')''')
     conn.execute('''CREATE TABLE IF NOT EXISTS daily_report_settings (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER DEFAULT 1, send_time TEXT DEFAULT '20:00')''')
     conn.execute("INSERT OR IGNORE INTO daily_report_settings (id,enabled,send_time) VALUES (1,1,'20:00')")
@@ -5543,6 +5572,178 @@ def business_plus():
         crm.append({'shop':sh,'count':cnt['n'],'turnover':cnt['s']})
     product_map={p['name']:dict(p) for p in products}; conn.close()
     return render_template_string(BUSINESS_PLUS_TEMPLATE,section=section,section_title=section_titles[section],today=today,revenue=revenue,cost=cost,exp=exp,debt=debt,orders=orders,shops=shops,products=products,batches=batches,visits=visits,settings=settings,expenses=expenses,ranking=sorted(ranking.items(),key=lambda x:x[1],reverse=True),production=production,low=low,crm=crm,product_map=product_map)
+
+@app.route('/global_search')
+def global_search():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    q=(request.args.get('q') or '').strip()
+    if not q: return redirect(url_for('index'))
+    like='%'+q+'%'; conn=get_db_connection(); ensure_business_plus_schema(conn)
+    shops=conn.execute('SELECT id,name,phone,debt FROM shops WHERE name LIKE ? OR phone LIKE ? ORDER BY name LIMIT 30',(like,like)).fetchall()
+    products=conn.execute('SELECT id,name,category,stock FROM products WHERE name LIKE ? OR category LIKE ? ORDER BY name LIMIT 30',(like,like)).fetchall()
+    orders=conn.execute('SELECT id,shop_name,agent_name,total_sum,date,status FROM orders WHERE CAST(id AS TEXT) LIKE ? OR shop_name LIKE ? OR agent_name LIKE ? OR items_text LIKE ? ORDER BY id DESC LIMIT 40',(like,like,like,like)).fetchall()
+    staff=conn.execute('SELECT tg_id,name,phone,role FROM users WHERE name LIKE ? OR phone LIKE ? ORDER BY name LIMIT 30',(like,like)).fetchall()
+    suppliers=conn.execute('SELECT id,name,phone,note FROM suppliers WHERE name LIKE ? OR phone LIKE ? ORDER BY name LIMIT 30',(like,like)).fetchall()
+    receipts=conn.execute('SELECT id,supplier_name,invoice_no,receipt_date,total_amount FROM stock_receipts WHERE supplier_name LIKE ? OR invoice_no LIKE ? ORDER BY id DESC LIMIT 30',(like,like)).fetchall()
+    conn.close()
+    tpl='''<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><main class="container-fluid py-4"><div class="d-flex justify-content-between flex-wrap gap-2"><h3>🔎 Qidiruv: {{q}}</h3><a class="btn btn-outline-secondary" href="/">Bosh panel</a></div><form class="input-group my-3" style="max-width:700px"><input class="form-control" name="q" value="{{q}}" placeholder="Do‘kon, mahsulot, buyurtma, postavshik..."><button class="btn btn-primary">Qidirish</button></form><div class="row g-3"><div class="col-lg-6"><div class="card p-3"><h5>Do‘konlar ({{shops|length}})</h5>{% for x in shops %}<div class="border-bottom py-2"><b>{{x.name}}</b> · Qarz {{'{:,.0f}'.format(x.debt or 0)}} so‘m · <a href="/shop_turnover/{{x.id}}">Tarix</a></div>{% else %}<small>Natija yo‘q</small>{% endfor %}</div></div><div class="col-lg-6"><div class="card p-3"><h5>Mahsulotlar ({{products|length}})</h5>{% for x in products %}<div class="border-bottom py-2"><b>{{x.name}}</b> · {{x.category}} · Qoldiq {{x.stock}} <a href="/#tab-inventory">Sklad</a></div>{% else %}<small>Natija yo‘q</small>{% endfor %}</div></div><div class="col-lg-7"><div class="card p-3"><h5>Buyurtmalar ({{orders|length}})</h5>{% for x in orders %}<div class="border-bottom py-2">#{{x.id}} · <b>{{x.shop_name}}</b> · {{x.agent_name}} · {{'{:,.0f}'.format(x.total_sum or 0)}} so‘m · {{x.status}} · {{x.date}}</div>{% else %}<small>Natija yo‘q</small>{% endfor %}</div></div><div class="col-lg-5"><div class="card p-3"><h5>Xodimlar va agentlar ({{staff|length}})</h5>{% for x in staff %}<div class="border-bottom py-2"><b>{{x.name}}</b> · {{x.role}} · {{x.phone}}</div>{% else %}<small>Natija yo‘q</small>{% endfor %}</div></div><div class="col-lg-6"><div class="card p-3"><h5>Postavshiklar ({{suppliers|length}})</h5>{% for x in suppliers %}<div class="border-bottom py-2"><b>{{x.name}}</b> · {{x.phone}} · {{x.note}}</div>{% else %}<small>Natija yo‘q</small>{% endfor %}<a class="mt-2" href="/stock_receipts">Kirim va postavshiklarni boshqarish</a></div></div><div class="col-lg-6"><div class="card p-3"><h5>Kirim hujjatlari ({{receipts|length}})</h5>{% for x in receipts %}<div class="border-bottom py-2">#{{x.id}} · <b>{{x.supplier_name}}</b> · {{x.invoice_no or '—'}} · {{x.receipt_date}} · {{'{:,.0f}'.format(x.total_amount or 0)}} so‘m · <a href="/stock_receipt/{{x.id}}">Ochish / tahrirlash</a></div>{% else %}<small>Natija yo‘q</small>{% endfor %}</div></div></div></main>'''
+    return render_template_string(tpl,q=q,shops=shops,products=products,orders=orders,staff=staff,suppliers=suppliers,receipts=receipts)
+
+@app.route('/audit_history')
+def audit_history():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    q=(request.args.get('q') or '').strip(); conn=get_db_connection()
+    try:
+        if q:
+            like='%'+q+'%'; rows=conn.execute('SELECT * FROM audit_log WHERE actor LIKE ? OR action LIKE ? OR entity LIKE ? OR details LIKE ? ORDER BY id DESC LIMIT 500',(like,like,like,like)).fetchall()
+        else: rows=conn.execute('SELECT * FROM audit_log ORDER BY id DESC LIMIT 300').fetchall()
+    finally: conn.close()
+    tpl='''<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><main class="container-fluid py-4"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h3>📜 Tizim harakatlari tarixi</h3><a class="btn btn-outline-secondary" href="/">Bosh panel</a></div><form class="input-group my-3" style="max-width:520px"><input class="form-control" name="q" value="{{q}}" placeholder="Xodim, amal yoki tafsilot"><button class="btn btn-primary">Qidirish</button></form><div class="table-responsive card p-2"><table class="table table-sm table-striped"><thead><tr><th>Sana</th><th>Xodim</th><th>Amal</th><th>Bo‘lim</th><th>ID</th><th>Tafsilot</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.date}}</td><td>{{r.actor}}</td><td>{{r.action}}</td><td>{{r.entity}}</td><td>{{r.entity_id}}</td><td style="min-width:240px">{{r.details}}</td></tr>{% else %}<tr><td colspan="6">Tarix yozuvlari topilmadi.</td></tr>{% endfor %}</tbody></table></div><small class="text-muted">Oxirgi 300 yozuv ko‘rsatiladi; qidiruvda 500 tagacha.</small></main>'''
+    return render_template_string(tpl,rows=rows,q=q)
+
+STOCK_RECEIPT_TEMPLATE = r'''<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xoji Aka — Postavshik va kirim</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#f4f6fb;color:#1e293b}.card{border:0;border-radius:14px;box-shadow:0 4px 18px #15234a0d}.muted{color:#64748b}.table td{vertical-align:middle}</style></head><body><main class="container-fluid p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h3>📥 Postavshiklar va partiyaviy kirim</h3><div class="muted">Bitta hujjatda ko‘p mahsulot kirimi · kirimlarni keyin tahrirlash mumkin</div></div><a class="btn btn-outline-secondary" href="/business_plus?section=warehouse">← Skladga qaytish</a></div>
+<div class="row g-3"><div class="col-xl-7"><div class="card p-3"><h5>{{ 'Kirimni tahrirlash #' ~ receipt.id if receipt else 'Yangi kirim hujjati' }}</h5><form method="post" action="{{ '/stock_receipt/' ~ receipt.id if receipt else '/stock_receipts' }}" id="receiptForm"><div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Postavshik nomi</label><input class="form-control" name="supplier_name" list="supplierList" value="{{receipt.supplier_name if receipt else ''}}" placeholder="Masalan: Baraka Trade" required><datalist id="supplierList">{% for sp in suppliers %}<option value="{{sp.name}}">{% endfor %}</datalist></div><div class="col-md-6"><label class="form-label">Telefon</label><input class="form-control" name="supplier_phone" value="{{supplier_phone}}" placeholder="+998..."></div><div class="col-md-4"><label class="form-label">Nakladnoy / hujjat №</label><input class="form-control" name="invoice_no" value="{{receipt.invoice_no if receipt else ''}}"></div><div class="col-md-4"><label class="form-label">Kirim sanasi</label><input class="form-control" type="date" name="receipt_date" value="{{receipt.receipt_date if receipt else today}}" required></div><div class="col-md-4"><label class="form-label">Izoh</label><input class="form-control" name="note" value="{{receipt.note if receipt else ''}}"></div></div><div class="d-flex justify-content-between align-items-center mb-2"><h6 class="mb-0">Kirim qilinadigan mahsulotlar</h6><button type="button" class="btn btn-sm btn-outline-primary" onclick="addRow()">+ Mahsulot qo‘shish</button></div><div class="table-responsive"><table class="table table-sm table-bordered" id="itemsTable"><thead><tr><th style="min-width:170px">Mahsulot</th><th>Miqdor</th><th>Kelish narxi</th><th>Optom narxi</th><th>Partiya №</th><th>Ishlab chiqarilgan</th><th>Yaroqlilik</th><th></th></tr></thead><tbody>{% for it in items %}<tr><td><select class="form-select form-select-sm" name="product_id[]" required><option value="">Mahsulot</option>{% for p in products %}<option value="{{p.id}}" {% if p.id==it.product_id %}selected{% endif %}>{{p.name}}</option>{% endfor %}</select></td><td><input class="form-control form-control-sm" type="number" min="0.001" step="0.001" name="qty[]" value="{{it.qty}}" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="unit_cost[]" value="{{it.unit_cost}}" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="optom_price[]" value="{{it.optom_price}}"></td><td><input class="form-control form-control-sm" name="batch_code[]" value="{{it.batch_code}}"></td><td><input class="form-control form-control-sm" type="date" name="produced_date[]" value="{{it.produced_date}}"></td><td><input class="form-control form-control-sm" type="date" name="expiry_date[]" value="{{it.expiry_date}}"></td><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">×</button></td></tr>{% else %}<tr><td><select class="form-select form-select-sm" name="product_id[]" required><option value="">Mahsulot</option>{% for p in products %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></td><td><input class="form-control form-control-sm" type="number" min="0.001" step="0.001" name="qty[]" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="unit_cost[]" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="optom_price[]"></td><td><input class="form-control form-control-sm" name="batch_code[]"></td><td><input class="form-control form-control-sm" type="date" name="produced_date[]"></td><td><input class="form-control form-control-sm" type="date" name="expiry_date[]"></td><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">×</button></td></tr>{% endfor %}</tbody></table></div><div class="d-flex justify-content-end align-items-center py-2"><span class="fw-bold">Taxminiy kirim jami: <span class="text-success" id="receiptTotalPreview">0</span> so‘m</span></div><button class="btn btn-success w-100 mt-2">{{'O‘zgarishlarni saqlash' if receipt else 'Barcha mahsulotlarni bitta hujjat bilan kirim qilish'}}</button></form></div></div>
+<div class="col-xl-5"><div class="card p-3"><h5>🏢 Postavshiklar</h5><p class="muted small">Avval postavshikni shu yerda ro‘yxatga qo‘shing. Keyin kirim hujjatida ro‘yxatdan tanlaysiz. Har bir postavshik nomi, telefoni va izohini keyin tahrirlash mumkin.</p><form method="post" action="/supplier/add" class="border rounded p-2 mb-3"><div class="mb-2"><label class="form-label small fw-bold">Yangi postavshik nomi</label><input class="form-control" name="name" placeholder="Masalan: Baraka Trade" required></div><div class="row g-2"><div class="col-6"><input class="form-control" name="phone" placeholder="Telefon"></div><div class="col-6"><input class="form-control" name="note" placeholder="Izoh"></div></div><button class="btn btn-success w-100 mt-2">+ Postavshikni saqlash</button></form><h6 class="fw-bold">Mavjud postavshiklar ({{suppliers|length}})</h6>{% for sp in suppliers %}<form method="post" action="/supplier/{{sp.id}}/edit" class="row g-2 border-bottom py-2"><div class="col-5"><input class="form-control form-control-sm" name="name" value="{{sp.name}}" required></div><div class="col-4"><input class="form-control form-control-sm" name="phone" value="{{sp.phone}}" placeholder="Telefon"></div><div class="col-3"><button class="btn btn-sm btn-outline-primary w-100">Saqlash</button></div><div class="col-12"><input class="form-control form-control-sm" name="note" value="{{sp.note}}" placeholder="Izoh"></div></form>{% else %}<p class="muted">Hali postavshik qo‘shilmagan. Yuqoridagi forma orqali birinchi postavshikni kiriting.</p>{% endfor %}</div></div></div>
+<div class="card p-3 mt-3"><h5>📚 Kirim hujjatlari tarixi</h5><div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Sana</th><th>Postavshik</th><th>Hujjat №</th><th>Mahsulotlar</th><th>Jami</th><th></th></tr></thead><tbody>{% for r in receipts %}<tr><td>{{r.receipt_date}}</td><td>{{r.supplier_name}}</td><td>{{r.invoice_no or '—'}}</td><td>{{r.item_count}} xil</td><td>{{'{:,.0f}'.format(r.total_amount)}} so‘m</td><td><a class="btn btn-sm btn-outline-primary" href="/stock_receipt/{{r.id}}">Tahrirlash</a></td></tr>{% else %}<tr><td colspan="6" class="text-center muted">Kirim hujjatlari hali yo‘q.</td></tr>{% endfor %}</tbody></table></div></div></main>
+<script>const productOptions={{ product_options|safe }};function calcReceiptTotal(){let total=0;document.querySelectorAll('#itemsTable tbody tr').forEach(tr=>{const q=parseFloat(tr.querySelector('[name="qty[]"]')?.value||0)||0;const c=parseFloat(tr.querySelector('[name="unit_cost[]"]')?.value||0)||0;total+=q*c;});const el=document.getElementById('receiptTotalPreview');if(el)el.textContent=new Intl.NumberFormat('uz-UZ',{maximumFractionDigits:0}).format(total);}function addRow(){const tr=document.createElement('tr');tr.innerHTML='<td><select class="form-select form-select-sm" name="product_id[]" required>'+productOptions+'</select></td><td><input class="form-control form-control-sm" type="number" min="0.001" step="0.001" name="qty[]" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="unit_cost[]" required></td><td><input class="form-control form-control-sm" type="number" min="0" step="any" name="optom_price[]"></td><td><input class="form-control form-control-sm" name="batch_code[]"></td><td><input class="form-control form-control-sm" type="date" name="produced_date[]"></td><td><input class="form-control form-control-sm" type="date" name="expiry_date[]"></td><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove();calcReceiptTotal()">×</button></td>';document.querySelector('#itemsTable tbody').appendChild(tr);calcReceiptTotal();}document.addEventListener('input',e=>{if(e.target.matches('[name="qty[]"],[name="unit_cost[]"]'))calcReceiptTotal();});document.addEventListener('click',e=>{if(e.target.closest('#itemsTable .btn-outline-danger'))setTimeout(calcReceiptTotal,0);});document.addEventListener('DOMContentLoaded',calcReceiptTotal);calcReceiptTotal();</script></body></html>''' 
+
+
+def _stock_receipt_page(receipt_id=None):
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    suppliers=conn.execute('SELECT * FROM suppliers ORDER BY name').fetchall()
+    products=conn.execute('SELECT id,name FROM products ORDER BY name').fetchall()
+    receipt=None; items=[]; supplier_phone=''
+    if receipt_id:
+        receipt=conn.execute('SELECT * FROM stock_receipts WHERE id=?',(receipt_id,)).fetchone()
+        if not receipt:
+            conn.close(); return 'Kirim hujjati topilmadi.',404
+        items=conn.execute('SELECT * FROM stock_receipt_items WHERE receipt_id=? ORDER BY id',(receipt_id,)).fetchall()
+        sp=conn.execute('SELECT phone FROM suppliers WHERE id=?',(receipt['supplier_id'],)).fetchone() if receipt['supplier_id'] else None
+        supplier_phone=sp['phone'] if sp else ''
+    receipts=conn.execute('SELECT r.*,COUNT(i.id) item_count FROM stock_receipts r LEFT JOIN stock_receipt_items i ON i.receipt_id=r.id GROUP BY r.id ORDER BY r.id DESC LIMIT 100').fetchall()
+    conn.close()
+    import json as _json
+    opts='<option value="">Mahsulot</option>'+''.join(f'<option value="{int(p["id"])}">{str(p["name"]).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")}</option>' for p in products)
+    return render_template_string(STOCK_RECEIPT_TEMPLATE,receipt=receipt,items=items,suppliers=suppliers,products=products,supplier_phone=supplier_phone,receipts=receipts,today=datetime.now().strftime('%Y-%m-%d'),product_options=_json.dumps(opts))
+
+@app.route('/stock_receipts',methods=['GET','POST'])
+def stock_receipts():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    if request.method=='GET': return _stock_receipt_page()
+    supplier_name=(request.form.get('supplier_name') or '').strip()
+    if not supplier_name: return 'Postavshik nomini kiriting.',400
+    pids=request.form.getlist('product_id[]'); qtys=request.form.getlist('qty[]'); costs=request.form.getlist('unit_cost[]'); prices=request.form.getlist('optom_price[]'); codes=request.form.getlist('batch_code[]'); produced_dates=request.form.getlist('produced_date[]'); expiries=request.form.getlist('expiry_date[]')
+    lines=[]
+    for i,pid in enumerate(pids):
+        if not pid: continue
+        try: q=float(qtys[i]); c=float(costs[i] or 0); op=float(prices[i] or 0)
+        except (ValueError,IndexError): return 'Mahsulot miqdori yoki narxi noto‘g‘ri.',400
+        if q<=0 or c<0 or op<0: return 'Miqdor musbat, narxlar manfiy bo‘lmasligi kerak.',400
+        lines.append((int(pid),q,c,op,codes[i] if i<len(codes) else '',produced_dates[i] if i<len(produced_dates) else '',expiries[i] if i<len(expiries) else ''))
+    if not lines: return 'Kamida bitta mahsulot qo‘shing.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        sp=conn.execute('SELECT * FROM suppliers WHERE name=? COLLATE NOCASE',(supplier_name,)).fetchone()
+        if sp: sid=sp['id']; conn.execute('UPDATE suppliers SET phone=? WHERE id=?',(request.form.get('supplier_phone','').strip(),sid))
+        else:
+            cur=conn.execute('INSERT INTO suppliers(name,phone,note,created_at) VALUES(?,?,?,?)',(supplier_name,request.form.get('supplier_phone','').strip(),' ',datetime.now().strftime('%Y-%m-%d %H:%M:%S'))); sid=cur.lastrowid
+        date=request.form.get('receipt_date') or datetime.now().strftime('%Y-%m-%d'); stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); total=0
+        cur=conn.execute('INSERT INTO stock_receipts(supplier_id,supplier_name,invoice_no,receipt_date,total_amount,note,actor,created_at) VALUES(?,?,?,?,?,?,?,?)',(sid,supplier_name,request.form.get('invoice_no','').strip(),date,0,request.form.get('note','').strip(),current_actor(),stamp)); rid=cur.lastrowid
+        for pid,q,c,op,code,produced,expiry in lines:
+            pr=conn.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
+            if not pr: raise ValueError('Mahsulot topilmadi.')
+            amount=q*c; total+=amount
+            conn.execute('INSERT INTO stock_receipt_items(receipt_id,product_id,product_name,qty,unit_cost,optom_price,batch_code,produced_date,expiry_date) VALUES(?,?,?,?,?,?,?,?,?)',(rid,pid,pr['name'],q,c,op,code,produced,expiry))
+            conn.execute('UPDATE products SET stock=COALESCE(stock,0)+?,cost_price=?,optom_price=CASE WHEN ?>0 THEN ? ELSE optom_price END WHERE id=?',(q,c,op,op,pid))
+            record_stock_movement(conn,pr['name'],q,'Postavshik kirimi',f'{supplier_name} / #{rid}')
+            if code or produced or expiry:
+                conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor,receipt_id) VALUES(?,?,?,?,?,?,?,?,?)',(pr['name'],code,q,produced,expiry,c,stamp,current_actor(),rid))
+        conn.execute('UPDATE stock_receipts SET total_amount=? WHERE id=?',(total,rid)); log_audit(conn,'Postavshikdan partiyaviy kirim','stock_receipt',rid,f'{supplier_name}; {len(lines)} mahsulot; jami={total}')
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); conn.close(); app.logger.exception('Partiyaviy kirim saqlashda xato'); return f'Kirim saqlanmadi: {e}',400
+    conn.close(); return redirect(url_for('stock_receipt_edit',receipt_id=rid))
+
+@app.route('/stock_receipt/<int:receipt_id>',methods=['GET','POST'])
+def stock_receipt_edit(receipt_id):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    if request.method=='GET': return _stock_receipt_page(receipt_id)
+    supplier_name=(request.form.get('supplier_name') or '').strip()
+    pids=request.form.getlist('product_id[]'); qtys=request.form.getlist('qty[]'); costs=request.form.getlist('unit_cost[]'); prices=request.form.getlist('optom_price[]'); codes=request.form.getlist('batch_code[]'); produced_dates=request.form.getlist('produced_date[]'); expiries=request.form.getlist('expiry_date[]')
+    lines=[]
+    for i,pid in enumerate(pids):
+        if not pid: continue
+        try: q=float(qtys[i]); c=float(costs[i] or 0); op=float(prices[i] or 0)
+        except (ValueError,IndexError): return 'Miqdor yoki narx noto‘g‘ri.',400
+        if q<=0 or c<0 or op<0: return 'Miqdor musbat, narx manfiy bo‘lmasligi kerak.',400
+        lines.append((int(pid),q,c,op,codes[i] if i<len(codes) else '',produced_dates[i] if i<len(produced_dates) else '',expiries[i] if i<len(expiries) else ''))
+    if not supplier_name or not lines: return 'Postavshik va kamida bitta mahsulot shart.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        old=conn.execute('SELECT * FROM stock_receipts WHERE id=?',(receipt_id,)).fetchone()
+        if not old: raise ValueError('Kirim hujjati topilmadi.')
+        old_items=conn.execute('SELECT product_id,qty FROM stock_receipt_items WHERE receipt_id=?',(receipt_id,)).fetchall()
+        old_totals={}
+        for x in old_items:
+            if x['product_id']: old_totals[x['product_id']]=old_totals.get(x['product_id'],0)+float(x['qty'] or 0)
+        new_totals={}
+        for x in lines: new_totals[x[0]]=new_totals.get(x[0],0)+x[1]
+        for pid in set(old_totals)|set(new_totals):
+            pr=conn.execute('SELECT name FROM products WHERE id=?',(pid,)).fetchone()
+            if not pr: raise ValueError('Kirimdagi mahsulot bazadan topilmadi.')
+            delta=new_totals.get(pid,0)-old_totals.get(pid,0)
+            if delta: conn.execute('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=?',(delta,pid)); record_stock_movement(conn,pr['name'],delta,'Kirim hujjati tahriri',f'#{receipt_id}')
+        sp=conn.execute('SELECT * FROM suppliers WHERE name=? COLLATE NOCASE',(supplier_name,)).fetchone()
+        if sp: sid=sp['id']; conn.execute('UPDATE suppliers SET phone=? WHERE id=?',(request.form.get('supplier_phone','').strip(),sid))
+        else: sid=conn.execute('INSERT INTO suppliers(name,phone,created_at) VALUES(?,?,?)',(supplier_name,request.form.get('supplier_phone','').strip(),datetime.now().strftime('%Y-%m-%d %H:%M:%S'))).lastrowid
+        conn.execute('UPDATE stock_receipts SET supplier_id=?,supplier_name=?,invoice_no=?,receipt_date=?,note=? WHERE id=?',(sid,supplier_name,request.form.get('invoice_no','').strip(),request.form.get('receipt_date') or old['receipt_date'],request.form.get('note','').strip(),receipt_id))
+        conn.execute('DELETE FROM stock_receipt_items WHERE receipt_id=?',(receipt_id,)); conn.execute('DELETE FROM stock_batches WHERE receipt_id=?',(receipt_id,)); total=0; stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for pid,q,c,op,code,produced,expiry in lines:
+            pr=conn.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone(); amount=q*c; total+=amount
+            conn.execute('INSERT INTO stock_receipt_items(receipt_id,product_id,product_name,qty,unit_cost,optom_price,batch_code,produced_date,expiry_date) VALUES(?,?,?,?,?,?,?,?,?)',(receipt_id,pid,pr['name'],q,c,op,code,produced,expiry))
+            conn.execute('UPDATE products SET cost_price=?,optom_price=CASE WHEN ?>0 THEN ? ELSE optom_price END WHERE id=?',(c,op,op,pid))
+            if code or produced or expiry: conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor,receipt_id) VALUES(?,?,?,?,?,?,?,?,?)',(pr['name'],code,q,produced,expiry,c,stamp,current_actor(),receipt_id))
+        conn.execute('UPDATE stock_receipts SET total_amount=? WHERE id=?',(total,receipt_id)); log_audit(conn,'Postavshik kirimi tahrirlandi','stock_receipt',receipt_id,f'{supplier_name}; {len(lines)} mahsulot; jami={total}')
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); conn.close(); app.logger.exception('Partiyaviy kirim tahririda xato'); return f'O‘zgarish saqlanmadi: {e}',400
+    conn.close(); return redirect(url_for('stock_receipt_edit',receipt_id=receipt_id))
+
+@app.route('/supplier/add',methods=['POST'])
+def supplier_add():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    name=(request.form.get('name') or '').strip()
+    phone=(request.form.get('phone') or '').strip()
+    note=(request.form.get('note') or '').strip()
+    if not name: return 'Postavshik nomini kiriting.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        existing=conn.execute('SELECT id FROM suppliers WHERE name=? COLLATE NOCASE',(name,)).fetchone()
+        if existing:
+            conn.execute('UPDATE suppliers SET phone=?,note=? WHERE id=?',(phone,note,existing['id']))
+            supplier_id=existing['id']
+            action='Postavshik ma’lumotlari yangilandi'
+        else:
+            supplier_id=conn.execute('INSERT INTO suppliers(name,phone,note,created_at) VALUES(?,?,?,?)',(name,phone,note,datetime.now().strftime('%Y-%m-%d %H:%M:%S'))).lastrowid
+            action='Yangi postavshik qo‘shildi'
+        log_audit(conn,action,'supplier',supplier_id,f'{name}; telefon={phone}')
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback(); conn.close(); return 'Bu postavshik nomi allaqachon mavjud.',400
+    conn.close()
+    return redirect(url_for('stock_receipts'))
+
+
+@app.route('/supplier/<int:supplier_id>/edit',methods=['POST'])
+def supplier_edit(supplier_id):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    name=(request.form.get('name') or '').strip()
+    if not name: return 'Postavshik nomi bo‘sh bo‘lmasin.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        conn.execute('UPDATE suppliers SET name=?,phone=?,note=? WHERE id=?',(name,request.form.get('phone','').strip(),request.form.get('note','').strip(),supplier_id)); conn.execute('UPDATE stock_receipts SET supplier_name=? WHERE supplier_id=?',(name,supplier_id)); log_audit(conn,'Postavshik tahrirlandi','supplier',supplier_id,f'{name}; telefon={request.form.get("phone","").strip()}'); conn.commit()
+    except sqlite3.IntegrityError: conn.rollback(); conn.close(); return 'Bu nomdagi postavshik allaqachon mavjud.',400
+    conn.close(); return redirect(url_for('stock_receipts'))
 
 @app.route('/business_plus/credit',methods=['POST'])
 def business_plus_credit():
