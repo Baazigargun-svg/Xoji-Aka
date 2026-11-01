@@ -34,7 +34,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
@@ -118,6 +118,17 @@ def get_db_connection():
   conn = sqlite3.connect(DB_NAME)
   conn.row_factory = sqlite3.Row
   return conn
+
+
+def ensure_catalog_weight_column(conn):
+  """Eski katalog bazalariga og‘irlik ustunini xavfsiz qo‘shadi."""
+  try:
+    columns = {row['name'] for row in conn.execute('PRAGMA table_info(catalog_items)').fetchall()}
+    if 'weight' not in columns:
+      conn.execute("ALTER TABLE catalog_items ADD COLUMN weight TEXT DEFAULT ''")
+      conn.commit()
+  except Exception:
+    app.logger.exception('Katalog og‘irligi ustunini tekshirishda xato')
 
 
 def is_admin_tg(tg_id):
@@ -237,6 +248,15 @@ def make_staff_web_url(tg_id):
   return f'{WEB_BASE_URL}/{_path}/{int(tg_id)}?{urlencode({"ts": ts, "sig": sig})}'
 
 
+
+def make_agent_catalog_url(tg_id):
+  """Agent katalogi uchun qisqa muddatli imzolangan Web App havolasi."""
+  ts = int(time.time())
+  raw = f'{int(tg_id)}:{ts}'.encode('utf-8')
+  sig = hmac.new(_web_link_secret(), raw, hashlib.sha256).hexdigest()
+  return f'{WEB_BASE_URL}/agent_catalog/{int(tg_id)}?{urlencode({"ts": ts, "sig": sig})}'
+
+
 def verify_staff_link(tg_id):
   try:
     ts = int(request.args.get('ts', '0'))
@@ -289,6 +309,7 @@ def init_web_db():
       name TEXT NOT NULL,
       category TEXT DEFAULT 'Boshqa',
       price REAL NOT NULL DEFAULT 0,
+      weight TEXT DEFAULT '',
       description TEXT DEFAULT '',
       image_filename TEXT DEFAULT '',
       active INTEGER NOT NULL DEFAULT 1,
@@ -298,7 +319,11 @@ def init_web_db():
   # (category ustuni yo'q bo'lsa), xatolik bermasligi uchun migration ham qo'shib qo'yish mumkin:
   try:
       cursor.execute("ALTER TABLE catalog_items ADD COLUMN category TEXT DEFAULT 'Boshqa'")
-  except:
+  except Exception:
+      pass
+  try:
+      cursor.execute("ALTER TABLE catalog_items ADD COLUMN weight TEXT DEFAULT ''")
+  except Exception:
       pass
 
     
@@ -1769,31 +1794,29 @@ catalog_sessions = {}
 
 @bot.message_handler(func=lambda message: message.text == '🖼 Mahsulotlar katalogi')
 def send_catalog_categories_to_agent(message):
+    """Agent katalogini Telegram ichidagi bitta Web App sahifasida ochadi."""
+    tg_id = message.from_user.id
     conn = get_db_connection()
-    role_row = conn.execute('SELECT role FROM users WHERE tg_id = ?', (message.from_user.id,)).fetchone()
-    if not role_row or not any(r in (role_row['role'] or '') for r in ('agent', 'admin')):
-        conn.close()
+    role_row = conn.execute('SELECT role FROM users WHERE tg_id = ?', (tg_id,)).fetchone()
+    count_row = conn.execute('SELECT COUNT(*) AS n FROM catalog_items WHERE active = 1').fetchone()
+    conn.close()
+    if not role_row or not any(r in (role_row['role'] or '').casefold() for r in ('agent', 'admin')):
         bot.send_message(message.chat.id, 'Katalogni ko‘rish uchun agent roli kerak.')
         return
-    
-    # Bazadagi mavjud kategoriyalarni olish
-    categories = conn.execute('SELECT DISTINCT category FROM catalog_items UNION SELECT DISTINCT category FROM products').fetchall()
-    conn.close()
-    
-    if not categories:
-        bot.send_message(message.chat.id, 'Hozircha kategoriyalar yoki mahsulotlar mavjud emas.')
+    if not count_row or not count_row['n']:
+        bot.send_message(message.chat.id, 'Hozircha katalogga mahsulot joylanmagan.')
         return
-
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    for cat in categories:
-        cat_name = cat['category'] if cat['category'] else 'Boshqa'
-        markup.add(types.KeyboardButton(f"📁 {cat_name}"))
-    
-    markup.add(types.KeyboardButton("🔙 Orqaga (Asosiy menyu)"))
-    
+    catalog_url = make_agent_catalog_url(tg_id)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        '🖼 Katalogni ochish',
+        web_app=types.WebAppInfo(url=catalog_url)
+    ))
     bot.send_message(
         message.chat.id,
-        "🖼 <b>Mahsulotlar katalogi</b>\n\nQaysi kategoriyadagi mahsulotlarni ko'rishni xohlaysiz? Quyidagilardan birini tanlang:",
+        '🖼 <b>XOJI AKA — MAHSULOTLAR KATALOGI</b>\n\n'
+        'Barcha mahsulotlar bitta sahifada ochiladi. Rasmlarni slayd qilib ko‘rishingiz mumkin; '
+        'har bir mahsulot yonida nomi, og‘irligi va narxi ko‘rsatiladi.',
         parse_mode='HTML',
         reply_markup=markup
     )
@@ -4067,13 +4090,14 @@ HTML_TEMPLATE = """
     </div>
 
     <div class="col-md-2"><label class="form-label">Narxi (so‘m)</label><input class="form-control" type="number" min="0" step="any" name="price" required></div>
+    <div class="col-md-2"><label class="form-label">Og‘irligi</label><input class="form-control" name="weight" maxlength="40" placeholder="Masalan: 500 g"></div>
     <div class="col-md-3"><label class="form-label">Rasm (JPG/PNG/WEBP)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
     <div class="col-md-3"><label class="form-label">Izoh</label><input class="form-control" name="description" maxlength="500" placeholder="Og‘irligi, tarkibi va h.k."></div>
     <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Qo‘shish</button></div>
 </form>
                     </div>
                     <div class="row g-3">
-                    {% for c in catalog_items %}<div class="col-6 col-md-3"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:180px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body"><h6 class="fw-bold">{{ c['name'] }}</h6><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><p class="small text-muted">{{ c['description'] or '' }}</p><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger w-100">O‘chirish</button></form></div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
+                    {% for c in catalog_items %}<div class="col-6 col-md-3"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:180px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body"><h6 class="fw-bold">{{ c['name'] }}</h6><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><p class="small text-muted">{{ c['weight'] or '' }} {{ c['description'] or '' }}</p><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger w-100">O‘chirish</button></form></div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
                     </div>
                 </div>
                 <div class="tab-pane fade" id="tab-reports">
@@ -4482,7 +4506,7 @@ def audit_web_post(response):
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'catalog_image', 'healthz']
+    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'agent_catalog_webapp', 'catalog_image', 'healthz']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
@@ -4495,6 +4519,7 @@ def operator_dashboard():
   session['dashboard_end_date'] = end_date
 
   conn = get_db_connection()
+  ensure_catalog_weight_column(conn)
   shops = conn.execute('SELECT * FROM shops ORDER BY CASE WHEN COALESCE(debt,0)>0 THEN 0 ELSE 1 END, debt DESC, name').fetchall()
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
@@ -4954,12 +4979,84 @@ def catalog_image(filename):
 
 
 
+AGENT_CATALOG_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xoji Aka — Mahsulotlar katalogi</title>
+<style>
+:root{color-scheme:light;--ink:#172033;--muted:#687386;--accent:#13795b;--line:#e5eaf0}
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:var(--ink);font-family:Arial,sans-serif}
+.wrap{max-width:900px;margin:auto;padding:16px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#123d35;color:white;padding:16px 18px;border-radius:18px;margin-bottom:16px}
+.top h1{font-size:19px;margin:0}.top small{opacity:.8}.counter{font-size:13px;background:#ffffff22;padding:7px 11px;border-radius:20px;white-space:nowrap}
+.stage{background:white;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 8px 28px #14213d0d}
+.slide{display:none}.slide.active{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,.8fr);min-height:420px}
+.photo{background:#eef2f6;display:flex;align-items:center;justify-content:center;min-height:320px;padding:12px}.photo img{display:block;width:100%;height:100%;max-height:560px;object-fit:contain;border-radius:12px}
+.info{padding:25px 22px;display:flex;flex-direction:column;justify-content:center;gap:12px}.category{color:var(--accent);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.name{font-size:25px;line-height:1.2;font-weight:800;margin:0}.price{font-size:25px;color:var(--accent);font-weight:800}.weight{display:inline-block;background:#edf6f2;color:#145b45;border-radius:10px;padding:9px 12px;font-weight:700;width:max-content}.desc{font-size:14px;line-height:1.5;color:var(--muted);white-space:pre-wrap}
+.controls{display:flex;align-items:center;justify-content:center;gap:14px;padding:15px}.nav{border:0;background:#123d35;color:white;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer}.nav:disabled{opacity:.35;cursor:default}.dots{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;padding:0 14px 16px}.dot{width:7px;height:7px;border:0;border-radius:50%;background:#cbd5e1;padding:0}.dot.active{background:var(--accent);width:20px;border-radius:10px}.empty{padding:40px;text-align:center;color:var(--muted)}
+@media(max-width:620px){.wrap{padding:10px}.slide.active{grid-template-columns:1fr;min-height:0}.photo{min-height:260px;height:44vh;max-height:430px}.photo img{max-height:100%}.info{padding:17px 18px;gap:8px}.name{font-size:21px}.price{font-size:22px}.top{padding:13px 14px}.nav{padding:11px 14px}}
+</style>
+</head>
+<body><main class="wrap">
+<header class="top"><div><h1>🖼 XOJI AKA KATALOGI</h1><small>Mahsulotlarni slayd qilib ko‘ring</small></div><div class="counter" id="counter">0 / 0</div></header>
+{% if items %}
+<section class="stage" aria-label="Mahsulotlar karuseli">
+{% for item in items %}
+<article class="slide {% if loop.first %}active{% endif %}" data-index="{{ loop.index0 }}">
+<div class="photo">{% if item['image_filename'] %}<img src="{{ item['image_src'] }}" alt="{{ item['name'] }}" {% if not loop.first %}loading="eager"{% endif %}>{% else %}<div class="empty">Rasm mavjud emas</div>{% endif %}</div>
+<div class="info"><div class="category">{{ item['category'] or 'Boshqa' }}</div><h2 class="name">{{ item['name'] }}</h2><div class="price">{{ '{:,.0f}'.format(item['price'] or 0) }} so‘m</div>{% if item['weight'] %}<div class="weight">⚖️ {{ item['weight'] }}</div>{% endif %}{% if item['description'] %}<div class="desc">{{ item['description'] }}</div>{% endif %}</div>
+</article>
+{% endfor %}
+</section>
+<div class="controls"><button class="nav" id="prev" type="button">‹ Oldingi</button><span id="currentLabel">1 / {{ items|length }}</span><button class="nav" id="next" type="button">Keyingi ›</button></div>
+<div class="dots" id="dots">{% for item in items %}<button type="button" class="dot {% if loop.first %}active{% endif %}" aria-label="{{ loop.index }}-mahsulot" data-go="{{ loop.index0 }}"></button>{% endfor %}</div>
+{% else %}<div class="stage empty">Katalogga hozircha mahsulot joylanmagan.</div>{% endif %}
+</main>
+<script>
+(function(){const slides=[...document.querySelectorAll('.slide')];if(!slides.length)return;let index=0;const counter=document.getElementById('counter'),label=document.getElementById('currentLabel'),dots=[...document.querySelectorAll('.dot')],prev=document.getElementById('prev'),next=document.getElementById('next');
+function show(n){index=(n+slides.length)%slides.length;slides.forEach((s,i)=>s.classList.toggle('active',i===index));dots.forEach((d,i)=>d.classList.toggle('active',i===index));counter.textContent=(index+1)+' / '+slides.length;label.textContent=(index+1)+' / '+slides.length;prev.disabled=slides.length<2;next.disabled=slides.length<2;}
+prev.addEventListener('click',()=>show(index-1));next.addEventListener('click',()=>show(index+1));dots.forEach(d=>d.addEventListener('click',()=>show(Number(d.dataset.go))));let x0=null;document.querySelector('.stage').addEventListener('touchstart',e=>{x0=e.changedTouches[0].clientX},{passive:true});document.querySelector('.stage').addEventListener('touchend',e=>{if(x0===null)return;let dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>45)show(index+(dx<0?1:-1));x0=null},{passive:true});document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(index+1);if(e.key==='ArrowLeft')show(index-1)});show(0);})();
+</script></body></html>
+"""
+
+@app.route('/agent_catalog/<int:tg_id>')
+def agent_catalog_webapp(tg_id):
+    if not verify_staff_link(tg_id):
+        return 'Katalog havolasi eskirgan. Telegram botdan katalogni qayta oching.', 403
+    conn = get_db_connection()
+    ensure_catalog_weight_column(conn)
+    user = conn.execute('SELECT name, role FROM users WHERE tg_id=?', (tg_id,)).fetchone()
+    if not user or not any(r in (user['role'] or '').casefold() for r in ('agent', 'admin')):
+        conn.close()
+        return 'Bu katalog faqat agentlar uchun.', 403
+    rows = conn.execute('SELECT id,name,category,price,weight,description,image_filename FROM catalog_items WHERE active=1 ORDER BY id DESC').fetchall()
+    conn.close()
+    items=[]
+    for row in rows:
+        item=dict(row)
+        image_value=item.get('image_filename') or ''
+        if image_value.startswith(('http://','https://')):
+            item['image_src']=image_value
+        elif image_value:
+            item['image_src']=url_for('catalog_image', filename=os.path.basename(image_value))
+        else:
+            item['image_src']=''
+        # Eski katalog yozuvlarida alohida og‘irlik bo‘lmasa, izohda ko‘rsatilgan bo‘lsa o‘sha matnni qoldiramiz.
+        if not item.get('weight'):
+            item['weight']=''
+        items.append(item)
+    return render_template_string(AGENT_CATALOG_TEMPLATE, items=items, agent_name=user['name'])
+
+
 
 @app.route('/catalog_add', methods=['POST'])
 def catalog_add():
     name = (request.form.get('name') or '').strip()
     category = (request.form.get('category') or 'Boshqa').strip()
     description = (request.form.get('description') or '').strip()
+    weight = (request.form.get('weight') or '').strip()
     price = safe_number(request.form.get('price'), -1)
     image = request.files.get('image')
 
@@ -4977,14 +5074,16 @@ def catalog_add():
         image_url = imagekitga_yuklash(image)
 
         conn = get_db_connection()
+        ensure_catalog_weight_column(conn)
         conn.execute(
             '''INSERT INTO catalog_items
-            (name, category, price, description, image_filename, active, created_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?)''',
+            (name, category, price, weight, description, image_filename, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)''',
             (
                 name,
                 category,
                 price,
+                weight,
                 description,
                 image_url,
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4996,7 +5095,7 @@ def catalog_add():
             'Katalogga mahsulot qo‘shildi',
             'catalog',
             image_url,
-            f'nomi={name}; kategoriya={category}; narx={price}'
+            f'nomi={name}; kategoriya={category}; og‘irligi={weight}; narx={price}'
         )
 
         conn.commit()
