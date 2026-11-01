@@ -34,7 +34,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAHOGCEWCIAqeLzHTJeNVkbHzyVc5-0acb4").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
@@ -443,7 +443,6 @@ def init_web_db():
   )
 
   initial_agents = [
-      (8241020136, "Qoraboyev Sirojiddin", "+998935075540", "agent,sex"),
       (2101923750, "Qoraboyeva Charos", "+998940300206", "agent"),
       (6431126337, "Asror", "+998912360777", "agent"),
       (6851851908, "SRJ", "+998975155540", "agent,admin"),
@@ -615,6 +614,11 @@ def init_web_db():
       ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
+      ('Matsarello/kg', 'Goʻsht va Sir mahsulotlari', 30, 50000.0, 59500.0, 59500.0, 3),
+      ('Sir arzon 02/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
+      ('Sir klassik/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
+      ('Indeyka + goʻsht 250 gm', 'Goʻsht va Sir mahsulotlari', 212, 36500.0, 44500.0, 44500.0, 3),
+      ('Sir Samarqand/kg', 'Goʻsht va Sir mahsulotlari', 10, 50000.0, 59500.0, 59500.0, 3),
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
     cursor.execute(
