@@ -9,6 +9,7 @@ import hmac
 import hashlib
 import shutil
 import uuid
+import re
 from imagekitio import ImageKit
 from werkzeug.utils import secure_filename
 from urllib.parse import urlencode
@@ -148,6 +149,41 @@ def safe_number(value, default=0.0, minimum=None, maximum=None):
   if maximum is not None:
     number = min(maximum, number)
   return number
+
+
+
+def normalize_visit_day(value):
+    """Tashrif kunlaridagi to'liq nom va qisqa kodlarni yagona hafta kuniga aylantiradi."""
+    raw = (value or '').strip().casefold()
+    aliases = {
+        'd': 'dushanba', 'du': 'dushanba', 'dush': 'dushanba', 'dushanba': 'dushanba',
+        's': 'seshanba', 'se': 'seshanba', 'sesh': 'seshanba', 'seshanba': 'seshanba',
+        'ch': 'chorshanba', 'chor': 'chorshanba', 'chorshanba': 'chorshanba',
+        'p': 'payshanba', 'pay': 'payshanba', 'payshanba': 'payshanba',
+        'j': 'juma', 'ju': 'juma', 'juma': 'juma',
+        'sh': 'shanba', 'shan': 'shanba', 'shanba': 'shanba',
+        'ya': 'yakshanba', 'yak': 'yakshanba', 'yakshanba': 'yakshanba',
+    }
+    return aliases.get(raw, raw)
+
+
+def parse_order_item_lines(items_text):
+    """Buyurtma matnidan mahsulot, miqdor, jami va dona narxini ajratadi."""
+    parsed = []
+    for raw_line in (items_text or '').splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(.+?)\s*-\s*([0-9]+(?:[.,][0-9]+)?)\s*x\s*=\s*([0-9][0-9, .]*)", line, re.I)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        qty = safe_number(match.group(2).replace(',', '.'))
+        amount_text = match.group(3).replace(' ', '').replace(',', '').replace('.', '')
+        amount = safe_number(amount_text)
+        price = amount / qty if qty else 0
+        parsed.append({'name': name, 'qty': qty, 'price': price, 'amount': amount})
+    return parsed
 
 
 def current_actor():
@@ -558,95 +594,113 @@ def init_web_db():
 def create_excel_invoice(
     order_id, shop_name, agent_name, date_str, price_type, cart_items, comment=''
 ):
+  """A4 portretda yonma-yon joylashgan ikki bir xil nakladnoy nusxasi."""
   wb = Workbook()
   ws = wb.active
   ws.title = f'Nakladnoy_{order_id}'
-  ws.sheet_view.showGridLines = True
+  ws.sheet_view.showGridLines = False
 
-  title_font = Font(name='Arial', size=16, bold=True)
-  header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
-  bold_font = Font(name='Arial', size=11, bold=True)
-  header_fill = PatternFill(
-      start_color='1F497D', end_color='1F497D', fill_type='solid'
-  )
-  total_fill = PatternFill(
-      start_color='DCE6F1', end_color='DCE6F1', fill_type='solid'
-  )
+  title_font = Font(name='Arial', size=9, bold=True)
+  header_font = Font(name='Arial', size=7, bold=True, color='FFFFFF')
+  body_font = Font(name='Arial', size=7)
+  bold_font = Font(name='Arial', size=7, bold=True)
+  header_fill = PatternFill(start_color='1F497D', end_color='1F497D', fill_type='solid')
+  total_fill = PatternFill(start_color='DCE6F1', end_color='DCE6F1', fill_type='solid')
   thin_border = Border(
-      left=Side(style='thin', color='B0B0B0'),
-      right=Side(style='thin', color='B0B0B0'),
-      top=Side(style='thin', color='B0B0B0'),
-      bottom=Side(style='thin', color='B0B0B0'),
+      left=Side(style='thin', color='808080'),
+      right=Side(style='thin', color='808080'),
+      top=Side(style='thin', color='808080'),
+      bottom=Side(style='thin', color='808080'),
   )
 
-  ws.merge_cells('A1:E1')
-  ws['A1'] = 'XOJI AKA FACTORY — NAKLADNOY'
-  ws['A1'].font = title_font
-  ws['A1'].alignment = Alignment(horizontal='center')
+  copies = [(1, 5, '1-NUSXA'), (7, 11, '2-NUSXA')]
+  max_row = 1
+  for start_col, end_col, copy_label in copies:
+    ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+    title = ws.cell(row=1, column=start_col, value=f'XOJI AKA — NAKLADNOY #{order_id} ({copy_label})')
+    title.font = title_font
+    title.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-  ws['A3'] = f'Buyurtma ID: #{order_id}'
-  ws['A3'].font = bold_font
-  ws['D3'] = f'Sana: {date_str}'
-  ws['A4'] = f"Do'kon (Klient): {shop_name}"
-  ws['D4'] = f'Narx turi: {price_type.upper()}'
-  ws['A5'] = f'Agent: {agent_name}'
-  if comment:
-    ws['A6'] = f'Izoh (Kommentariya): {comment}'
-    ws['A6'].font = bold_font
+    ws.merge_cells(start_row=2, start_column=start_col, end_row=2, end_column=end_col)
+    meta = ws.cell(row=2, column=start_col,
+      value=f"Do‘kon: {shop_name} | Agent: {agent_name}\\nSana: {date_str} | Narx turi: {price_type}")
+    meta.font = body_font
+    meta.alignment = Alignment(vertical='center', wrap_text=True)
 
-  start_row = 8 if comment else 7
+    if comment:
+      ws.merge_cells(start_row=3, start_column=start_col, end_row=3, end_column=end_col)
+      c = ws.cell(row=3, column=start_col, value=f'Izoh: {comment}')
+      c.font = body_font
+      c.alignment = Alignment(wrap_text=True, vertical='center')
+    header_row = 4 if comment else 3
+    headers = ['№', 'Mahsulot', 'Soni', 'Narxi', 'Jami']
+    for offset, heading in enumerate(headers):
+      cell = ws.cell(row=header_row, column=start_col + offset, value=heading)
+      cell.font = header_font
+      cell.fill = header_fill
+      cell.alignment = Alignment(horizontal='center', vertical='center')
+      cell.border = thin_border
 
-  headers = ['№', 'Mahsulot nomi', "Miqdori", "Narxi (so'm)", 'Jami summa']
-  for col_num, header_title in enumerate(headers, 1):
-    cell = ws.cell(row=start_row, column=col_num, value=header_title)
-    cell.font = header_font
-    cell.fill = header_fill
-    cell.alignment = Alignment(horizontal='center', vertical='center')
-    cell.border = thin_border
+    row_num = header_row + 1
+    total_sum = 0.0
+    for idx, item in enumerate(cart_items, 1):
+      qty = safe_number(item.get('qty', 0))
+      price = safe_number(item.get('price', 0))
+      amount = qty * price
+      total_sum += amount
+      values = [idx, item.get('name', ''), qty, price, amount]
+      for offset, value in enumerate(values):
+        cell = ws.cell(row=row_num, column=start_col + offset, value=value)
+        cell.font = body_font
+        cell.border = thin_border
+        cell.alignment = Alignment(horizontal='right' if offset in (0,2,3,4) else 'left',
+                                   vertical='center', wrap_text=True)
+        if offset in (3,4):
+          cell.number_format = '#,##0'
+      row_num += 1
 
-  row_num = start_row + 1
-  total_sum = 0
-  for idx, item in enumerate(cart_items, 1):
-    ws.cell(row=row_num, column=1, value=idx).alignment = Alignment(
-        horizontal='center'
-    )
-    ws.cell(row=row_num, column=2, value=item['name']).alignment = Alignment(
-        horizontal='left'
-    )
-    ws.cell(row=row_num, column=3, value=item['qty']).alignment = Alignment(
-        horizontal='right'
-    )
-    ws.cell(row=row_num, column=4, value=item['price']).alignment = Alignment(
-        horizontal='right'
-    )
-    summa = item['qty'] * item['price']
-    total_sum += summa
-    ws.cell(row=row_num, column=5, value=summa).alignment = Alignment(
-        horizontal='right'
-    )
-    ws.cell(row=row_num, column=4).number_format = '#,##0'
-    ws.cell(row=row_num, column=5).number_format = '#,##0'
-    for col in range(1, 6):
+    ws.merge_cells(start_row=row_num, start_column=start_col, end_row=row_num, end_column=start_col+3)
+    total_label = ws.cell(row=row_num, column=start_col, value='ITOGO:')
+    total_label.font = bold_font
+    total_label.fill = total_fill
+    total_label.alignment = Alignment(horizontal='right')
+    total_val = ws.cell(row=row_num, column=start_col+4, value=total_sum)
+    total_val.font = bold_font
+    total_val.fill = total_fill
+    total_val.number_format = '#,##0'
+    total_val.alignment = Alignment(horizontal='right')
+    for col in range(start_col, end_col+1):
       ws.cell(row=row_num, column=col).border = thin_border
-    row_num += 1
+      ws.cell(row=row_num, column=col).fill = total_fill
 
-  ws.merge_cells(
-      start_row=row_num, start_column=1, end_row=row_num, end_column=4
-  )
-  ws.cell(row=row_num, column=1, value="JAMI TO'LOV:").alignment = Alignment(
-      horizontal='right'
-  )
-  ws.cell(row=row_num, column=1).font = bold_font
-  total_val = ws.cell(row=row_num, column=5, value=total_sum)
-  total_val.font = bold_font
-  total_val.number_format = '#,##0'
-  for col in range(1, 6):
-    ws.cell(row=row_num, column=col).fill = total_fill
-    ws.cell(row=row_num, column=col).border = thin_border
+    row_num += 2
+    ws.merge_cells(start_row=row_num, start_column=start_col, end_row=row_num, end_column=start_col+1)
+    ws.cell(row=row_num, column=start_col, value='Topshirdim: ______').font = body_font
+    ws.merge_cells(start_row=row_num, start_column=start_col+2, end_row=row_num, end_column=end_col)
+    ws.cell(row=row_num, column=start_col+2, value='Qabul qildim: ______').font = body_font
+    max_row = max(max_row, row_num)
 
-  row_num += 2
-  ws.cell(row=row_num, column=2, value='Qabul qildim: ____')
-  ws.cell(row=row_num, column=4, value='Topshirdim: ____')
+  # Har bir nusxa sahifaning yarmiga sig‘ishi uchun ikki nusxa yonma-yon.
+  widths = [4, 17, 7, 9, 10]
+  for start_col, _, _ in copies:
+    for offset, width in enumerate(widths):
+      ws.column_dimensions[get_column_letter(start_col + offset)].width = width
+  ws.column_dimensions['F'].width = 2
+  ws.row_dimensions[1].height = 20
+  ws.row_dimensions[2].height = 28
+  if comment:
+    ws.row_dimensions[3].height = 20
+  ws.page_setup.paperSize = ws.PAPERSIZE_A4
+  ws.page_setup.orientation = 'portrait'
+  ws.page_setup.fitToWidth = 1
+  ws.page_setup.fitToHeight = 0
+  ws.sheet_properties.pageSetUpPr.fitToPage = True
+  ws.page_margins.left = 0.12
+  ws.page_margins.right = 0.12
+  ws.page_margins.top = 0.18
+  ws.page_margins.bottom = 0.18
+  ws.print_area = f'A1:K{max_row}'
+  ws.sheet_properties.pageSetUpPr.autoPageBreaks = False
 
   file_name = f'Nakladnoy_{order_id}.xlsx'
   wb.save(file_name)
@@ -2240,16 +2294,21 @@ def add_agent_web():
     except:
       tg_id = None
 
-  if name and tg_id:
+  if name:
     conn = get_db_connection()
     try:
+      # Telegram ID kiritilmagan sex xodimi uchun maxsus lokal ID ajratiladi.
+      # Katta musbat ID Flask tahrirlash/o‘chirish URL yo‘llari bilan ham mos keladi.
+      if not tg_id:
+        max_local = conn.execute('SELECT MAX(tg_id) AS m FROM users WHERE tg_id >= 8000000000000000000').fetchone()['m']
+        tg_id = (max_local + 1) if max_local is not None else 8000000000000000000
       conn.execute(
           'INSERT OR REPLACE INTO users (tg_id, name, phone, role, territory, salary_percent) VALUES (?, ?, ?, ?, ?, ?)',
           (tg_id, name, phone or '', role, territory, salary_percent),
       )
       conn.commit()
     except Exception as e:
-      print('Agent qo\'shish xatosi:', e)
+      print('Xodim qo\'shish xatosi:', e)
     conn.close()
   return redirect(url_for('index'))
 
@@ -2886,8 +2945,9 @@ def start_order(message):
       for sh in shops:
           if not is_admin and agent_territory and sh['territory'] and sh['territory'] != agent_territory:
               continue
-          planned = [d.strip().lower() for d in (sh['visit_days'] or '').replace(';', ',').split(',') if d.strip()]
-          if planned and today_day.lower() not in planned:
+          planned = [normalize_visit_day(d) for d in re.split(r'[,;|/]+', (sh['visit_days'] or '')) if d.strip()]
+          # Posesheniya — faqat bugungi kunga belgilangan do‘konlar.
+          if not planned or normalize_visit_day(today_day) not in planned:
               continue
           visible_count += 1
           ordered_today = conn.execute("SELECT id FROM orders WHERE shop_name=? AND agent_name=? AND substr(date,1,10)=?", (sh['name'], agent_name, datetime.now().strftime('%Y-%m-%d'))).fetchone()
@@ -3422,11 +3482,20 @@ HTML_TEMPLATE = """
                         <div class="col-lg-7"><div class="card-glass p-4">
                             <h6 class="fw-bold mb-3">Bugungi savdo tushumi — mahsulotlar bo‘yicha (so‘m)</h6>
                             <canvas id="todayProductChart" height="150"></canvas>
+                            <div class="table-responsive mt-3"><table class="table table-sm table-striped mb-0"><thead><tr><th>Mahsulot</th><th class="text-end">Tushum (so‘m)</th></tr></thead><tbody>
+                            {% for r in today_sales_rows %}<tr><td>{{ r.product }}</td><td class="text-end fw-bold">{{ '{:,.0f}'.format(r.amount) }}</td></tr>{% else %}<tr><td colspan="2" class="text-center text-muted">Bugun hali savdo tushumi yo‘q.</td></tr>{% endfor %}
+                            </tbody></table></div>
                         </div></div>
                         <div class="col-lg-5"><div class="card-glass p-4">
                             <h6 class="fw-bold mb-3">Agentlar bugungi olgan mahsuloti</h6>
                             <canvas id="todayAgentChart" height="150"></canvas>
                         </div></div>
+                    </div>
+                    <div class="card-glass p-3 mt-3">
+                        <h6 class="fw-bold mb-2">Bugungi agentlar kesimida mahsulotlar</h6>
+                        <div class="table-responsive"><table class="table table-sm table-striped align-middle mb-0"><thead><tr><th>Agent</th><th>Mahsulot</th><th class="text-end">Miqdor</th></tr></thead><tbody>
+                        {% for r in today_agent_product_rows %}<tr><td>{{ r.agent }}</td><td>{{ r.product }}</td><td class="text-end fw-bold">{{ '{:,.2f}'.format(r.qty).rstrip('0').rstrip('.') }}</td></tr>{% else %}<tr><td colspan="3" class="text-center text-muted">Bugun hali buyurtma yo‘q.</td></tr>{% endfor %}
+                        </tbody></table></div>
                     </div>
                 </div>
                 <div class="tab-pane fade" id="tab-orders">
@@ -3547,7 +3616,7 @@ HTML_TEMPLATE = """
                                                         <button type="submit" class="btn btn-sm btn-success px-2"><i class="bi bi-check"></i></button>
                                                     </form>
                                                     {% endif %}
-                                                    <a href="/print_nakladnoy/{{ o['id'] }}" target="_blank" class="btn btn-sm btn-outline-dark py-0 w-100" style="font-size: 11px;"><i class="bi bi-printer me-1"></i>Nakladnoy</a>
+                                                    <a href="/nakladnoy_print/{{ o['id'] }}" target="_blank" class="btn btn-sm btn-outline-dark py-0 w-100" style="font-size: 11px;"><i class="bi bi-printer me-1"></i>A4 nakladnoy (2 nusxa)</a><a href="/print_nakladnoy/{{ o['id'] }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 w-100 mt-1" style="font-size: 10px;">Excel nakladnoy</a>
                                                 </td>
                                             </tr>
                                             {% else %}
@@ -3700,7 +3769,7 @@ HTML_TEMPLATE = """
                             <div class="card-glass p-4">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <h5 class="fw-bold mb-0"><i class="bi bi-people me-2"></i>Do'konlar Ro'yxati</h5>
-                                    <input type="text" id="shopSearchInput" class="form-control form-control-sm" placeholder="Do'kon qidirish..." style="width: 200px;" onkeyup="filterShopsTable()">
+                                    <input type="text" id="shopSearchInput" class="form-control form-control-sm" placeholder="Do‘kon yoki tashrif kunini qidirish..." style="width: 200px;" onkeyup="filterShopsTable()">
                                 </div>
                                 <div class="table-responsive">
                                     <table class="table table-custom table-hover align-middle" id="shopsTable">
@@ -3738,7 +3807,7 @@ HTML_TEMPLATE = """
                                 <form action="/add_agent_web" method="POST">
                                     <div class="mb-3"><label class="form-label small fw-bold">F.I.O (Ismi):</label><input type="text" name="name" class="form-control" required></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Telefon Raqam:</label><input type="text" name="phone" class="form-control"></div>
-                                    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Masalan: 123456789" required></div>
+                                    <div class="mb-3"><label class="form-label small fw-bold">Telegram ID:</label><input type="number" name="tg_id" class="form-control" placeholder="Ixtiyoriy — faqat Telegram kabineti uchun"></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Biriktirilgan Territoriya (Hudud):</label><input type="text" name="territory" class="form-control" placeholder="Masalan: Chilonzor-1"></div>
                                     <div class="mb-3"><label class="form-label small fw-bold">Oylik bazaviy foizi (%):</label><input type="number" step="any" name="salary_percent" class="form-control" value="5"></div>
                                     <div class="mb-3">
@@ -3787,13 +3856,29 @@ HTML_TEMPLATE = """
                     </div>
                     <div class="card-glass p-4 mt-4">
                         <h5 class="fw-bold mb-3">🏭 Sex xodimlari — davomat, kunlik va oylik</h5>
-                        <form action="/attendance" method="POST" class="row g-2 mb-3">
-                            <div class="col-md-3"><label class="form-label">Xodim</label><select name="worker_name" class="form-select" required><option value="">Tanlang</option>{% for w in sex_workers %}<option value="{{ w['name'] }}">{{ w['name'] }}</option>{% endfor %}</select></div>
-                            <div class="col-md-2"><label class="form-label">Sana</label><input type="date" name="work_date" class="form-control" value="{{ today_iso }}" required></div>
-                            <div class="col-md-2"><label class="form-label">Davomat</label><select name="status" class="form-select"><option>Keldi</option><option>Kelmadi</option><option>Ruxsat</option></select></div>
-                            <div class="col-md-2"><label class="form-label">Kunlik haq</label><input type="number" name="daily_pay" class="form-control" min="0" step="any"></div>
-                            <div class="col-md-3"><label class="form-label">Izoh</label><input name="note" class="form-control"></div>
-                            <div class="col-12"><button class="btn btn-primary">Davomatni saqlash</button></div>
+                        <form action="/attendance" method="POST" class="mb-3">
+                            <div class="row g-2 align-items-end mb-2">
+                                <div class="col-md-3"><label class="form-label">Davomat sanasi</label><input type="date" name="work_date" class="form-control" value="{{ today_iso }}" required></div>
+                                <div class="col-md-5"><label class="form-label">Umumiy izoh (ixtiyoriy)</label><input name="note" class="form-control" placeholder="Masalan: kunduzgi smena"></div>
+                                <div class="col-md-4 text-md-end"><small class="text-muted">Belgilangani — Keldi, belgilanmagani — Kelmadi</small></div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle mb-2">
+                                    <thead><tr><th style="width:55px">Keldi</th><th>Xodim</th><th style="width:190px">Kunlik haq (so‘m)</th></tr></thead>
+                                    <tbody>
+                                    {% for w in sex_workers %}
+                                    <tr>
+                                        <td class="text-center"><input class="form-check-input" type="checkbox" name="present_workers" value="{{ w['name'] }}" {% if attendance_status_map.get(w['name']) == 'Keldi' %}checked{% endif %}></td>
+                                        <td><input type="hidden" name="worker_names" value="{{ w['name'] }}"><b>{{ w['name'] }}</b></td>
+                                        <td><input type="number" name="daily_pay_{{ loop.index0 }}" class="form-control form-control-sm" min="0" step="any" placeholder="Ixtiyoriy"></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="text-center text-muted">Xodimlar ro‘yxati bo‘sh. Avval Agentlar bo‘limida xodim qo‘shing va rolini “Sex xodimi” qiling.</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button class="btn btn-primary" {% if not sex_workers %}disabled{% endif %}>Barcha xodimlar davomatini saqlash</button>
                         </form>
                         <form action="/staff_payment" method="POST" class="row g-2 mb-3">
                             <div class="col-md-3"><select name="worker_name" class="form-select" required><option value="">Xodim</option>{% for w in sex_workers %}<option>{{ w['name'] }}</option>{% endfor %}</select></div>
@@ -4234,23 +4319,44 @@ function addEditModalRow(selectedProd = '', qtyVal = '1') {
     // Sahifa va sana tanlovlarini qayta yuklanganda saqlash.
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('#v-pills-tab [data-bs-toggle="pill"]');
-        const savedTab = sessionStorage.getItem('xoji_active_tab');
+        const savedTab = window.location.hash && document.querySelector('#v-pills-tab [data-bs-target="' + window.location.hash + '"]')
+            ? window.location.hash : (sessionStorage.getItem('xoji_active_tab') || '#tab-dashboard');
         if (savedTab) {
             const trigger = document.querySelector('#v-pills-tab [data-bs-target="' + savedTab + '"]');
             if (trigger) bootstrap.Tab.getOrCreateInstance(trigger).show();
         }
-        tabs.forEach(t => t.addEventListener('shown.bs.tab', e => sessionStorage.setItem('xoji_active_tab', e.target.getAttribute('data-bs-target'))));
+        tabs.forEach(t => t.addEventListener('shown.bs.tab', e => {
+            const tab = e.target.getAttribute('data-bs-target');
+            sessionStorage.setItem('xoji_active_tab', tab);
+            history.replaceState(null, '', tab);
+        }));
+        document.querySelectorAll('form[method="POST"]').forEach(form => {
+            form.addEventListener('submit', () => {
+                const active = document.querySelector('#v-pills-tab .nav-link.active');
+                if (!active) return;
+                let hidden = form.querySelector('input[name="_return_tab"]');
+                if (!hidden) { hidden = document.createElement('input'); hidden.type='hidden'; hidden.name='_return_tab'; form.appendChild(hidden); }
+                hidden.value = active.getAttribute('data-bs-target') || '#tab-dashboard';
+                sessionStorage.setItem('xoji_active_tab', hidden.value);
+            });
+        });
         document.querySelectorAll('input[name="start_date"], input[name="end_date"]').forEach(el => {
             const k='xoji_'+el.name;
             if (!el.value && sessionStorage.getItem(k)) el.value=sessionStorage.getItem(k);
             el.addEventListener('change',()=>sessionStorage.setItem(k,el.value));
         });
-        const pctx=document.getElementById('todayProductChart');
-        if (pctx) new Chart(pctx,{type:'bar',data:{labels:{{ today_sales_labels|tojson }},datasets:[{label:'Tushum (so‘m)',data:{{ today_sales_values|tojson }},backgroundColor:'#3b82f6'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
-        const actx=document.getElementById('todayAgentChart');
-        if (actx) new Chart(actx,{type:'doughnut',data:{labels:{{ today_agent_labels|tojson }},datasets:[{data:{{ today_agent_values|tojson }}}]},options:{responsive:true}});
-        const cctx=document.getElementById('categoryDonutChart');
-        if (cctx) new Chart(cctx,{type:'doughnut',data:{labels:{{ cat_chart_labels|tojson }},datasets:[{data:{{ cat_chart_data|tojson }},backgroundColor:{{ cat_chart_colors|tojson }}}]},options:{responsive:true,maintainAspectRatio:false}});
+        if (typeof Chart !== 'undefined') {
+            const pctx=document.getElementById('todayProductChart');
+            if (pctx) new Chart(pctx,{type:'bar',data:{labels:{{ today_sales_labels|tojson }},datasets:[{label:'Tushum (so‘m)',data:{{ today_sales_values|tojson }},backgroundColor:'#3b82f6'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+            const actx=document.getElementById('todayAgentChart');
+            if (actx) new Chart(actx,{type:'doughnut',data:{labels:{{ today_agent_labels|tojson }},datasets:[{data:{{ today_agent_values|tojson }}}]},options:{responsive:true}});
+            const cctx=document.getElementById('categoryDonutChart');
+            if (cctx) new Chart(cctx,{type:'doughnut',data:{labels:{{ cat_chart_labels|tojson }},datasets:[{data:{{ cat_chart_data|tojson }},backgroundColor:{{ cat_chart_colors|tojson }}}]},options:{responsive:true,maintainAspectRatio:false}});
+        } else {
+            document.querySelectorAll('#todayProductChart,#todayAgentChart,#categoryDonutChart').forEach(c => {
+                if (c) c.insertAdjacentHTML('afterend','<div class="small text-muted mt-2">Diagramma kutubxonasi yuklanmadi. Jadvaldagi raqamlar saqlangan.</div>');
+            });
+        }
     });
 </script>
 </body>
@@ -4275,6 +4381,14 @@ def audit_web_post(response):
             conn.close()
     except Exception:
         app.logger.exception('Web amalini audit jurnaliga yozib bo‘lmadi')
+    try:
+        return_tab = request.form.get('_return_tab', '')
+        if response.status_code in (301, 302, 303, 307, 308) and return_tab.startswith('#tab-'):
+            location = response.headers.get('Location', '')
+            if (location == '/' or location.startswith('/?')) and '#' not in location:
+                response.headers['Location'] = location + return_tab
+    except Exception:
+        pass
     return response
 
 
@@ -4318,6 +4432,10 @@ def operator_dashboard():
   staff_attendance_list = conn.execute('SELECT * FROM staff_attendance ORDER BY work_date DESC, worker_name LIMIT 100').fetchall()
   staff_payment_list = conn.execute('SELECT * FROM staff_payments ORDER BY payment_date DESC, id DESC LIMIT 100').fetchall()
   sex_workers = [u for u in users if 'sex' in (u['role'] or '').lower() and 'admin' not in (u['role'] or '').lower()]
+  attendance_status_map = {
+      r['worker_name']: r['status']
+      for r in conn.execute('SELECT worker_name,status FROM staff_attendance WHERE work_date=?', (today_iso,)).fetchall()
+  }
 
 
   inc_sum = conn.execute('SELECT SUM(amount) as s FROM incomes').fetchone()['s'] or 0
@@ -4331,7 +4449,7 @@ def operator_dashboard():
 
   agents_salary_data = []
   for u in users:
-      if 'agent' in u['role']:
+      if 'agent' in (u['role'] or '').lower() or 'sex' in (u['role'] or '').lower():
           u_dict = dict(u)
           agent_orders = conn.execute("SELECT items_text, total_sum FROM orders WHERE agent_name = ? AND status != 'Bekor'", (u['name'],)).fetchall()
           
@@ -4381,26 +4499,25 @@ def operator_dashboard():
   # Bugungi savdo mahsulotlar kesimida va agentlar kesimida.
   today_sales = {}
   today_agent_qty = {}
-  today_orders = conn.execute("SELECT agent_name, items_text FROM orders WHERE substr(date,1,10)=? AND status != 'Bekor'", (today_iso,)).fetchall()
+  today_agent_products = {}
+  today_orders = conn.execute("SELECT agent_name, items_text FROM orders WHERE substr(date,1,10)=? AND COALESCE(status,'') NOT IN ('Bekor','Bekor qilindi')", (today_iso,)).fetchall()
   for row in today_orders:
       agent = row['agent_name'] or 'Noma’lum'
-      qty_sum = 0.0
-      for line in (row['items_text'] or '').splitlines():
-          try:
-              parts = line.split(' - ', 1)
-              name = parts[0].strip()
-              qty = safe_number(parts[1].split('x',1)[0].strip().replace(',', '.'))
-              amount_part = parts[1].split('=',1)[1] if '=' in parts[1] else ''
-              amount = safe_number(amount_part.replace('so\'m','').replace('so‘m','').strip().replace(' ','').replace(',',''))
-              today_sales[name] = today_sales.get(name, 0.0) + amount
-              qty_sum += qty
-          except Exception:
-              continue
-      today_agent_qty[agent] = today_agent_qty.get(agent, 0.0) + qty_sum
+      for item in parse_order_item_lines(row['items_text']):
+          name, qty, amount = item['name'], item['qty'], item['amount']
+          today_sales[name] = today_sales.get(name, 0.0) + amount
+          today_agent_qty[agent] = today_agent_qty.get(agent, 0.0) + qty
+          key = (agent, name)
+          today_agent_products[key] = today_agent_products.get(key, 0.0) + qty
   today_sales_labels = list(today_sales.keys())
   today_sales_values = [round(v, 2) for v in today_sales.values()]
+  today_sales_rows = [{'product': k, 'amount': v} for k, v in sorted(today_sales.items(), key=lambda x: x[1], reverse=True)]
   today_agent_labels = list(today_agent_qty.keys())
   today_agent_values = [round(v, 2) for v in today_agent_qty.values()]
+  today_agent_product_rows = [
+      {'agent': a, 'product': p, 'qty': q}
+      for (a, p), q in sorted(today_agent_products.items(), key=lambda x: (x[0][0].casefold(), x[0][1].casefold()))
+  ]
 
   total_revenue_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE status != 'Bekor'").fetchone()
   total_revenue = total_revenue_res['s'] if total_revenue_res and total_revenue_res['s'] else 0
@@ -4481,8 +4598,10 @@ def operator_dashboard():
       cat_chart_colors=colors[: len(cat_chart_labels)],
       today_sales_labels=today_sales_labels,
       today_sales_values=today_sales_values,
+      today_sales_rows=today_sales_rows,
       today_agent_labels=today_agent_labels,
       today_agent_values=today_agent_values,
+      today_agent_product_rows=today_agent_product_rows,
       total_revenue=total_revenue,
       total_cost=total_cost,
       total_expense=exp_sum,
@@ -4497,6 +4616,7 @@ def operator_dashboard():
       staff_attendance_list=staff_attendance_list,
       staff_payment_list=staff_payment_list,
       sex_workers=sex_workers,
+      attendance_status_map=attendance_status_map,
       agents_salary_data=agents_salary_data,
       product_incomes_history=product_incomes_history,
       stock_cost_value=stock_cost_value,
@@ -4544,8 +4664,56 @@ def shop_turnover(shop_id):
     rows = conn.execute("SELECT * FROM orders WHERE shop_name=? AND substr(date,1,10) BETWEEN ? AND ? AND status!='Bekor' ORDER BY date,id", (shop['name'], start, end)).fetchall()
     total = sum(safe_number(r['total_sum']) for r in rows)
     conn.close()
-    template = """<!doctype html><html lang="uz"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Do‘kon oboroti</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><body class="bg-light"><main class="container py-4"><a href="/" class="btn btn-outline-secondary btn-sm mb-3">Bosh panel</a><h3>{{ shop.name }} — Oborot</h3><form class="row g-2 my-3"><div class="col"><label>Dan</label><input type="date" class="form-control" name="start_date" value="{{ start }}"></div><div class="col"><label>Gacha</label><input type="date" class="form-control" name="end_date" value="{{ end }}"></div><div class="col-auto d-flex align-items-end"><button class="btn btn-primary">Qidirish</button></div></form><div class="alert alert-primary">Jami oborot: <b>{{ total|round|int }} so‘m</b> | Buyurtmalar: {{ rows|length }} ta</div><div class="table-responsive"><table class="table table-sm table-striped bg-white"><thead><tr><th>Sana</th><th>Buyurtma</th><th>Agent</th><th>Mahsulotlar</th><th>Summa</th><th>Status</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.date }}</td><td>#{{ r.id }}</td><td>{{ r.agent_name }}</td><td><pre class="mb-0">{{ r.items_text }}</pre></td><td>{{ r.total_sum }}</td><td>{{ r.status }}</td></tr>{% else %}<tr><td colspan="6">Tanlangan davrda buyurtma yo‘q.</td></tr>{% endfor %}</tbody></table></div></main></body></html>"""
+    template = """<!doctype html><html lang="uz"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Do‘kon oboroti</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><body class="bg-light"><main class="container py-4"><a href="/" class="btn btn-outline-secondary btn-sm mb-3">Bosh panel</a><h3>{{ shop.name }} — Oborot</h3><form class="row g-2 my-3"><div class="col"><label>Dan</label><input type="date" class="form-control" name="start_date" value="{{ start }}"></div><div class="col"><label>Gacha</label><input type="date" class="form-control" name="end_date" value="{{ end }}"></div><div class="col-auto d-flex align-items-end"><button class="btn btn-primary">Qidirish</button></div></form><div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2"><span>Jami oborot: <b>{{ total|round|int }} so‘m</b> | Buyurtmalar: {{ rows|length }} ta</span><a class="btn btn-success btn-sm" href="/shop_turnover/{{ shop.id }}/excel?start_date={{ start }}&end_date={{ end }}">Excelga yuklash</a></div><div class="table-responsive"><table class="table table-sm table-striped bg-white"><thead><tr><th>Sana</th><th>Buyurtma</th><th>Agent</th><th>Mahsulotlar</th><th>Summa</th><th>Status</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r.date }}</td><td>#{{ r.id }}</td><td>{{ r.agent_name }}</td><td><pre class="mb-0">{{ r.items_text }}</pre></td><td>{{ r.total_sum }}</td><td>{{ r.status }}</td></tr>{% else %}<tr><td colspan="6">Tanlangan davrda buyurtma yo‘q.</td></tr>{% endfor %}</tbody></table></div></main></body></html>"""
     return render_template_string(template, shop=shop, rows=rows, total=total, start=start, end=end)
+
+
+@app.route('/shop_turnover/<int:shop_id>/excel')
+def shop_turnover_excel(shop_id):
+    start = request.args.get('start_date', datetime.now().strftime('%Y-01-01'))
+    end = request.args.get('end_date', datetime.now().strftime('%Y-12-31'))
+    conn = get_db_connection()
+    shop = conn.execute('SELECT * FROM shops WHERE id=?', (shop_id,)).fetchone()
+    if not shop:
+        conn.close()
+        return 'Do‘kon topilmadi', 404
+    rows = conn.execute("SELECT * FROM orders WHERE shop_name=? AND substr(date,1,10) BETWEEN ? AND ? AND status!='Bekor' ORDER BY date,id", (shop['name'], start, end)).fetchall()
+    conn.close()
+    output = io.BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Do‘kon oboroti'
+    ws.append(['XOJI AKA — DO‘KON OBOROTI'])
+    ws.append(["Do‘kon", shop['name']])
+    ws.append(['Davr', f'{start} — {end}'])
+    ws.append([])
+    headers = ['№', 'Sana', 'Buyurtma №', 'Agent', 'Mahsulotlar', 'Summa (so‘m)', 'Status']
+    ws.append(headers)
+    total = 0.0
+    for idx, row in enumerate(rows, 1):
+        ws.append([idx, row['date'], row['id'], row['agent_name'], row['items_text'], safe_number(row['total_sum']), row['status']])
+        total += safe_number(row['total_sum'])
+    ws.append([])
+    ws.append(['', '', '', '', 'JAMI OBOROT', total, ''])
+    header_row = 5
+    for cell in ws[header_row]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='1F4E78')
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+    for col, width in {'A':7,'B':20,'C':13,'D':22,'E':55,'F':18,'G':16}.items():
+        ws.column_dimensions[col].width = width
+    for r in range(6, ws.max_row):
+        ws.cell(r,6).number_format = '#,##0'
+    ws.freeze_panes = 'A6'
+    ws.auto_filter.ref = f'A5:G{5+len(rows)}'
+    wb.save(output)
+    output.seek(0)
+    safe_shop = re.sub(r'[^A-Za-z0-9_-]+', '_', shop['name']).strip('_') or f'shop_{shop_id}'
+    return send_file(output, as_attachment=True, download_name=f'Oborot_{safe_shop}_{start}_{end}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/edit_income/<int:record_id>', methods=['POST'])
@@ -4584,22 +4752,45 @@ def delete_expense(record_id):
 
 @app.route('/attendance', methods=['POST'])
 def save_attendance():
-    worker=request.form.get('worker_name','').strip()
-    day=request.form.get('work_date') or datetime.now().strftime('%Y-%m-%d')
-    status=request.form.get('status','Keldi')
-    pay=safe_number(request.form.get('daily_pay'), minimum=0)
-    note=request.form.get('note','').strip()
-    if not worker: return 'Xodim tanlanmadi',400
-    conn=get_db_connection()
-    sql = "INSERT INTO staff_attendance(worker_name,work_date,status,daily_pay,note) VALUES(?,?,?,?,?) ON CONFLICT(worker_name,work_date) DO UPDATE SET status=excluded.status,daily_pay=excluded.daily_pay,note=excluded.note"
-    conn.execute(sql,(worker,day,status,pay,note))
-    if status=='Keldi' and pay>0:
-        exists=conn.execute("SELECT id FROM staff_payments WHERE worker_name=? AND payment_date=? AND payment_type='Kunlik' AND note LIKE ?",(worker,day,'%Davomat%')).fetchone()
-        if not exists:
-            conn.execute('INSERT INTO staff_payments(worker_name,amount,payment_type,payment_date,note) VALUES(?,?,?,?,?)',(worker,pay,'Kunlik',day,(note+' | Davomat').strip(' |')))
-    log_audit(conn,'Sex xodimi davomat qaydi','staff',worker,f'{day}; {status}; kunlik={pay}')
-    conn.commit(); conn.close()
-    return redirect(url_for('index')+'#tab-agents')
+    day = request.form.get('work_date') or datetime.now().strftime('%Y-%m-%d')
+    note = request.form.get('note', '').strip()
+    workers = [x.strip() for x in request.form.getlist('worker_names') if x.strip()]
+    present = set(x.strip() for x in request.form.getlist('present_workers') if x.strip())
+    conn = get_db_connection()
+
+    # Eski bitta xodimlik forma ham orqaga moslik uchun ishlayveradi.
+    legacy_worker = request.form.get('worker_name', '').strip()
+    if not workers and legacy_worker:
+        workers = [legacy_worker]
+        if request.form.get('status', 'Keldi') == 'Keldi':
+            present.add(legacy_worker)
+
+    if not workers:
+        conn.close()
+        return 'Davomat uchun xodimlar ro‘yxati bo‘sh.', 400
+
+    saved = 0
+    for idx, worker in enumerate(workers):
+        status = 'Keldi' if worker in present else 'Kelmadi'
+        pay = safe_number(request.form.get(f'daily_pay_{idx}', request.form.get('daily_pay', 0)), minimum=0)
+        sql = """INSERT INTO staff_attendance(worker_name,work_date,status,daily_pay,note)
+                 VALUES(?,?,?,?,?)
+                 ON CONFLICT(worker_name,work_date) DO UPDATE SET
+                 status=excluded.status,daily_pay=excluded.daily_pay,note=excluded.note"""
+        conn.execute(sql, (worker, day, status, pay, note))
+        if status == 'Keldi' and pay > 0:
+            exists = conn.execute("SELECT id FROM staff_payments WHERE worker_name=? AND payment_date=? AND payment_type='Kunlik' AND note LIKE ?", (worker, day, '%Davomat%')).fetchone()
+            if exists:
+                conn.execute('UPDATE staff_payments SET amount=?, note=? WHERE id=?', (pay, (note + ' | Davomat').strip(' |'), exists['id']))
+            else:
+                conn.execute('INSERT INTO staff_payments(worker_name,amount,payment_type,payment_date,note) VALUES(?,?,?,?,?)', (worker, pay, 'Kunlik', day, (note + ' | Davomat').strip(' |')))
+        elif status != 'Keldi':
+            conn.execute("DELETE FROM staff_payments WHERE worker_name=? AND payment_date=? AND payment_type='Kunlik' AND note LIKE ?", (worker, day, '%Davomat%'))
+        log_audit(conn, 'Sex xodimi davomat qaydi', 'staff', worker, f'{day}; {status}; kunlik={pay}')
+        saved += 1
+    conn.commit()
+    conn.close()
+    return redirect(url_for('index') + '#tab-agents')
 
 
 @app.route('/staff_payment', methods=['POST'])
@@ -4898,6 +5089,49 @@ def print_multiple_nakladnoy():
       download_name='Nakladnoylar.xlsx',
       mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
+
+
+@app.route('/nakladnoy_print/<int:order_id>')
+def print_nakladnoy_a4(order_id):
+    conn = get_db_connection()
+    order = conn.execute('SELECT * FROM orders WHERE id=?', (order_id,)).fetchone()
+    conn.close()
+    if not order:
+        return 'Buyurtma topilmadi', 404
+    items = parse_order_item_lines(order['items_text'])
+    template = r'''<!doctype html>
+<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nakladnoy #{{ order.id }}</title>
+<style>
+@page{size:A4 portrait;margin:4mm}
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;margin:0}
+.toolbar{padding:8px;margin-bottom:8px;text-align:right}
+.sheet{width:100%;display:flex;gap:2mm;align-items:flex-start}
+.copy{width:50%;border:0.25mm solid #555;padding:2mm;min-height:30mm;break-inside:avoid}
+h3{font-size:9pt;text-align:center;margin:0 0 2mm;font-weight:700}
+.meta{font-size:6.5pt;line-height:1.35;margin-bottom:2mm}
+table{width:100%;border-collapse:collapse;font-size:6.2pt;table-layout:fixed}
+th,td{border:.2mm solid #777;padding:1mm .6mm;vertical-align:top;overflow-wrap:anywhere}
+th{font-weight:700;text-align:center}
+td.num{text-align:right;white-space:nowrap}
+tfoot td{font-weight:700}
+.sign{font-size:6.2pt;margin-top:3mm;display:flex;justify-content:space-between}
+@media print{.toolbar{display:none}.sheet{gap:2mm}.copy{width:calc(50% - 1mm)}}
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">Chop etish</button></div>
+<div class="sheet">
+{% for copy_no in [1,2] %}
+<section class="copy">
+<h3>XOJI AKA — NAKLADNOY №{{ order.id }} <span style="font-size:6pt">({{ copy_no }}-nusxa)</span></h3>
+<div class="meta"><b>Do‘kon:</b> {{ order.shop_name }}<br><b>Agent:</b> {{ order.agent_name }}<br><b>Sana:</b> {{ order.date }}<br><b>Narx turi:</b> {{ order.price_type or '—' }}{% if order.comment %}<br><b>Izoh:</b> {{ order.comment }}{% endif %}</div>
+<table><thead><tr><th style="width:7%">№</th><th style="width:39%">Mahsulot</th><th style="width:15%">Soni</th><th style="width:19%">Narxi</th><th style="width:20%">Jami</th></tr></thead>
+<tbody>{% for item in items %}<tr><td class="num">{{ loop.index }}</td><td>{{ item.name }}</td><td class="num">{{ item.qty }}</td><td class="num">{{ '{:,.0f}'.format(item.price) }}</td><td class="num">{{ '{:,.0f}'.format(item.amount) }}</td></tr>{% else %}<tr><td colspan="5">Mahsulotlar topilmadi</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="4" style="text-align:right">ITOGO:</td><td class="num">{{ '{:,.0f}'.format(order.total_sum or 0) }}</td></tr></tfoot></table>
+<div class="sign"><span>Topshirdim: ________</span><span>Qabul qildim: ________</span></div>
+</section>
+{% endfor %}
+</div></body></html>'''
+    return render_template_string(template, order=order, items=items)
 
 
 @app.route('/print_nakladnoy/<int:order_id>')
