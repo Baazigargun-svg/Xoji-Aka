@@ -34,7 +34,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAHreTrkHh5JM0DBd9vBwJtnJKTaSpyLhps").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 
@@ -2173,7 +2173,7 @@ def update_order(order_id):
                         discount = ?, comment = ?, cost_total = ? WHERE id = ?""",
                      (shop_name, final_sum, '\n'.join(items), price_type, discount, comment, cost_total, order_id))
         log_audit(conn, 'Buyurtma tahrirlandi', 'order', order_id,
-                  f'do‘kon={shop_name}; jami={final_sum:.2f}; mahsulotlar={len(items)}')
+                  f"Eski: do‘kon={old_order['shop_name']}; jami={safe_number(old_order['total_sum']):.2f}; holat={old_order['status']}; mahsulotlar={(old_order['items_text'] or '')[:350]}. Yangi: do‘kon={shop_name}; jami={final_sum:.2f}; chegirma={discount:.2f}; narx_turi={price_type}; mahsulotlar={' | '.join(items)[:350]}")
         conn.commit()
     except ValueError as exc:
         conn.rollback()
@@ -2200,11 +2200,14 @@ def update_shop(shop_id):
     return 'Do‘kon nomini kiriting.', 400
   conn = get_db_connection()
   try:
+    old_shop = conn.execute('SELECT * FROM shops WHERE id=?',(shop_id,)).fetchone()
+    if not old_shop:
+      conn.close(); return 'Do‘kon topilmadi.',404
     conn.execute(
         'UPDATE shops SET name = ?, phone = ?, region = ?, landmark = ?, visit_days = ?, inventory = ?, territory = ? WHERE id = ?',
         (name, phone, region, landmark, visit_days, inventory, territory, shop_id),
     )
-    log_audit(conn, 'Do‘kon tahrirlandi', 'shop', shop_id, f'nomi={name}; telefon={phone}')
+    log_audit(conn, 'Do‘kon tahrirlandi', 'shop', shop_id, f"Eski: nomi={old_shop['name']}; telefon={old_shop['phone']}; hudud={old_shop['territory'] or old_shop['region']}. Yangi: nomi={name}; telefon={phone}; hudud={territory or region}")
     conn.commit()
   except sqlite3.IntegrityError:
     conn.rollback()
@@ -2232,6 +2235,9 @@ def update_product(prod_id):
     return 'Mahsulot nomini kiriting.', 400
   conn = get_db_connection()
   try:
+    old_product = conn.execute('SELECT * FROM products WHERE id=?',(prod_id,)).fetchone()
+    if not old_product:
+      conn.close(); return 'Mahsulot topilmadi.',404
     conn.execute(
         'UPDATE products SET name = ?, category = ?, stock = ?, cost_price ='
         ' ?, optom_price = ?, chakana_price = ?, agent_percent = ? WHERE id = ?',
@@ -2246,7 +2252,7 @@ def update_product(prod_id):
             prod_id,
         ),
     )
-    log_audit(conn, 'Mahsulot tahrirlandi', 'product', prod_id, f'nomi={name}; qoldiq={stock}; tannarx={cost_price}; optom={optom_price}; chakana={chakana_price}')
+    log_audit(conn, 'Mahsulot tahrirlandi', 'product', prod_id, f"Eski: nomi={old_product['name']}; qoldiq={safe_number(old_product['stock'])}; tannarx={safe_number(old_product['cost_price'])}; optom={safe_number(old_product['optom_price'])}; chakana={safe_number(old_product['chakana_price'])}. Yangi: nomi={name}; qoldiq={stock}; tannarx={cost_price}; optom={optom_price}; chakana={chakana_price}")
     conn.commit()
   except Exception as e:
     conn.rollback()
@@ -2564,7 +2570,11 @@ def staff_webapp(tg_id):
         conn.close()
         return 'Telegram foydalanuvchisi tasdiqlanmagan.', 403
     role = user['role'] or ''
-    role_key = 'admin' if 'admin' in role else ('agent' if 'agent' in role else ('sex' if 'sex' in role else ('zavsklad' if 'zavsklad' in role else ('ekspeditor' if 'ekspeditor' in role else role))))
+    role_lower = role.casefold()
+    role_key = 'admin' if 'admin' in role_lower else ('agent' if 'agent' in role_lower else ('sex' if 'sex' in role_lower else ('zavsklad' if 'zavsklad' in role_lower else ('ekspeditor' if 'ekspeditor' in role_lower else 'unknown'))))
+    if role_key not in ('agent', 'sex', 'zavsklad', 'ekspeditor'):
+        conn.close()
+        return 'Bu xodim uchun web kabinet ruxsati yoqilmagan.', 403
     error = ''
     if request.method == 'POST':
         action = request.form.get('action')
@@ -2821,6 +2831,10 @@ def agent_webapp(tg_id):
     if not user:
         conn.close()
         return "Foydalanuvchi topilmadi yoki ro'yxatdan o'tmagan.", 403
+    role_text = (user['role'] or '').casefold()
+    if 'agent' not in role_text or 'admin' in role_text:
+        conn.close()
+        return 'Bu kabinet faqat agentlar uchun. Sizning rolingizga mos kabinetni Telegram botdan oching.', 403
     
     agent_name = user['name']
     agent_territory = user['territory'] or ''
@@ -3433,6 +3447,10 @@ HTML_TEMPLATE = """
         .top-bar > div:last-child { flex-direction: row !important; flex-wrap: wrap; align-items: center; }
         .top-bar form { width: auto; max-width: 100%; flex-wrap: wrap; }
         .top-bar input[type="date"] { width: 125px !important; }
+        .top-bar form input[name="q"] { width: min(58vw, 260px) !important; }
+        .p-4 { padding: 1rem !important; }
+        .table-custom th,.table-custom td { font-size: 12px !important; padding: .45rem !important; }
+        .sidebar .nav-link { min-width: 72px; }
         .stat-box { margin-bottom: 10px; }
         .card-glass { padding-left: 12px !important; padding-right: 12px !important; }
     }
@@ -3464,7 +3482,7 @@ HTML_TEMPLATE = """
             <div class="d-flex align-items-center gap-2">
                 <a href="/logout" class="btn btn-sm btn-outline-danger fw-bold"><i class="bi bi-box-arrow-right me-1"></i>Chiqish</a>
                 <form method="GET" action="/global_search" class="d-flex gap-1 m-0"><input class="form-control form-control-sm" name="q" placeholder="Do‘kon, mahsulot, buyurtma..." style="width:210px" required><button class="btn btn-sm btn-outline-primary">Qidirish</button></form>
-                <a href="/audit_history" class="btn btn-sm btn-outline-dark">📜 Harakatlar tarixi</a>
+                <a href="/audit_history" class="btn btn-sm btn-outline-dark">📜 Harakatlar tarixi</a><a href="/rahbar_mobile" class="btn btn-sm btn-outline-primary">📱 Rahbar mobil paneli</a>
                 <a href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Excelga Yuklab Olish</a>
                 
                 <form method="GET" action="/" class="d-flex align-items-center gap-1 m-0 bg-light p-1 rounded border">
@@ -3500,7 +3518,7 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                     </div>
-                    <div class="card-glass p-3 mb-4 border-start border-4 border-warning"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h6 class="fw-bold mb-0">🔔 Boshqaruv ogohlantirishlari</h6><span class="badge bg-warning text-dark">{{ dashboard_alert_count }} ta e’tibor talab qiladi</span></div><div class="row g-2 mt-1"><div class="col-md-4"><a class="text-decoration-none" href="/#tab-inventory">📦 Kam qoldiq: <b>{{dashboard_low_products|length}}</b></a></div><div class="col-md-4">⏳ 30 kun ichida muddati tugaydigan partiyalar: <b>{{dashboard_batches|length}}</b></div><div class="col-md-4">🏪 Kechikkan do‘kon tashriflari: <b>{{overdue_visits_count}}</b></div></div></div>
+                    <div class="card-glass p-3 mb-4 border-start border-4 border-warning"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h6 class="fw-bold mb-0">🔔 Boshqaruv ogohlantirishlari</h6><span class="badge bg-warning text-dark">{{ dashboard_alert_count }} ta e’tibor talab qiladi</span></div><div class="row g-2 mt-1"><div class="col-md-4"><a class="text-decoration-none" href="/#tab-inventory">📦 Kam qoldiq: <b>{{dashboard_low_products|length}}</b></a></div><div class="col-md-4">⏳ 30 kun ichida muddati tugaydigan partiyalar: <b>{{dashboard_batches|length}}</b></div><div class="col-md-3">🏪 Kechikkan do‘kon tashriflari: <b>{{overdue_visits_count}}</b></div><div class="col-md-3">💳 Katta qarzdor do‘konlar: <b>{{dashboard_large_debts|length}}</b></div></div>{% if dashboard_large_debts %}<div class="mt-2 small"><b>Qarz chegarasi: {{"{:,.0f}".format(large_debt_threshold)}} so‘m</b>{% for d in dashboard_large_debts[:5] %}<div class="text-danger">{{d.name}} — {{"{:,.0f}".format(d.debt)}} so‘m</div>{% endfor %}</div>{% endif %}</div>
                     <div class="row g-4">
                         <div class="col-md-5">
                             <div class="card-glass p-4 h-100 d-flex flex-column align-items-center justify-content-center">
@@ -4663,12 +4681,15 @@ def operator_dashboard():
   dashboard_shop_visits = conn.execute('SELECT * FROM shop_visits ORDER BY id DESC LIMIT 12').fetchall()
   dashboard_batches = conn.execute("SELECT * FROM stock_batches WHERE expiry_date!='' AND expiry_date<=? ORDER BY expiry_date LIMIT 30", ((datetime.now()+timedelta(days=30)).strftime('%Y-%m-%d'),)).fetchall()
   dashboard_low_products = [p for p in products if safe_number(p['min_stock']) > 0 and safe_number(p['stock']) <= safe_number(p['min_stock'])]
+  # Katta qarz chegarasi Render Environment orqali sozlanadi; standart 1 mln so'm.
+  large_debt_threshold = safe_number(os.environ.get('LARGE_DEBT_THRESHOLD', '1000000'), 1000000, minimum=0)
+  dashboard_large_debts = [dict(x) for x in conn.execute('SELECT id,name,debt FROM shops WHERE COALESCE(debt,0)>=? ORDER BY debt DESC LIMIT 30', (large_debt_threshold,)).fetchall()]
   dashboard_production = {}
   for pending_order in conn.execute("SELECT items_text FROM orders WHERE status IN ('Yangi','Tasdiqlandi','Tayyorlanmoqda')").fetchall():
       for pending_item in parse_order_item_lines(pending_order['items_text']):
           dashboard_production[pending_item['name']] = dashboard_production.get(pending_item['name'], 0) + pending_item['qty']
   dashboard_product_map = {p['name']: dict(p) for p in products}
-  dashboard_alert_count = len(dashboard_low_products) + len(dashboard_batches) + overdue_visits_count
+  dashboard_alert_count = len(dashboard_low_products) + len(dashboard_batches) + overdue_visits_count + len(dashboard_large_debts)
   conn.close()
 
   return render_template_string(
@@ -4695,6 +4716,8 @@ def operator_dashboard():
       dashboard_shop_visits=dashboard_shop_visits,
       dashboard_batches=dashboard_batches,
       dashboard_low_products=dashboard_low_products,
+      dashboard_large_debts=dashboard_large_debts,
+      large_debt_threshold=large_debt_threshold,
       dashboard_production=dashboard_production,
       dashboard_product_map=dashboard_product_map,
       dashboard_alert_count=dashboard_alert_count,
@@ -4818,7 +4841,10 @@ def edit_income(record_id):
     amount=safe_number(request.form.get('amount'), minimum=0)
     if not source or amount<=0: return 'Manba va musbat summa kiriting.',400
     conn=get_db_connection()
+    old=conn.execute('SELECT source,amount FROM incomes WHERE id=?',(record_id,)).fetchone()
+    if not old: conn.close(); return 'Kirim yozuvi topilmadi.',404
     conn.execute('UPDATE incomes SET source=?, amount=? WHERE id=?',(source,amount,record_id))
+    log_audit(conn,'Kassa kirimi tahrirlandi','income',record_id,f"Eski: manba={old['source']}; summa={safe_number(old['amount']):.0f}. Yangi: manba={source}; summa={amount:.0f}")
     conn.commit(); conn.close()
     return redirect(url_for('index')+'#tab-kassa')
 
@@ -4829,20 +4855,27 @@ def edit_expense(record_id):
     amount=safe_number(request.form.get('amount'), minimum=0)
     if not reason or amount<=0: return 'Sabab va musbat summa kiriting.',400
     conn=get_db_connection()
+    old=conn.execute('SELECT reason,amount FROM expenses WHERE id=?',(record_id,)).fetchone()
+    if not old: conn.close(); return 'Xarajat yozuvi topilmadi.',404
     conn.execute('UPDATE expenses SET reason=?, amount=? WHERE id=?',(reason,amount,record_id))
+    log_audit(conn,'Xarajat tahrirlandi','expense',record_id,f"Eski: sabab={old['reason']}; summa={safe_number(old['amount']):.0f}. Yangi: sabab={reason}; summa={amount:.0f}")
     conn.commit(); conn.close()
     return redirect(url_for('index')+'#tab-kassa')
 
 
 @app.route('/delete_income/<int:record_id>', methods=['POST'])
 def delete_income(record_id):
-    conn=get_db_connection(); conn.execute('DELETE FROM incomes WHERE id=?',(record_id,)); conn.commit(); conn.close()
+    conn=get_db_connection(); old=conn.execute('SELECT source,amount FROM incomes WHERE id=?',(record_id,)).fetchone()
+    if old: log_audit(conn,'Kassa kirimi o‘chirildi','income',record_id,f"manba={old['source']}; summa={safe_number(old['amount']):.0f}")
+    conn.execute('DELETE FROM incomes WHERE id=?',(record_id,)); conn.commit(); conn.close()
     return redirect(url_for('index')+'#tab-kassa')
 
 
 @app.route('/delete_expense/<int:record_id>', methods=['POST'])
 def delete_expense(record_id):
-    conn=get_db_connection(); conn.execute('DELETE FROM expenses WHERE id=?',(record_id,)); conn.commit(); conn.close()
+    conn=get_db_connection(); old=conn.execute('SELECT reason,amount FROM expenses WHERE id=?',(record_id,)).fetchone()
+    if old: log_audit(conn,'Xarajat o‘chirildi','expense',record_id,f"sabab={old['reason']}; summa={safe_number(old['amount']):.0f}")
+    conn.execute('DELETE FROM expenses WHERE id=?',(record_id,)); conn.commit(); conn.close()
     return redirect(url_for('index')+'#tab-kassa')
 
 
@@ -5573,6 +5606,30 @@ def business_plus():
     product_map={p['name']:dict(p) for p in products}; conn.close()
     return render_template_string(BUSINESS_PLUS_TEMPLATE,section=section,section_title=section_titles[section],today=today,revenue=revenue,cost=cost,exp=exp,debt=debt,orders=orders,shops=shops,products=products,batches=batches,visits=visits,settings=settings,expenses=expenses,ranking=sorted(ranking.items(),key=lambda x:x[1],reverse=True),production=production,low=low,crm=crm,product_map=product_map)
 
+@app.route('/rahbar_mobile')
+def director_mobile_dashboard():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    today = datetime.now().strftime('%Y-%m-%d')
+    month = datetime.now().strftime('%Y-%m')
+    conn = get_db_connection()
+    try:
+        r = conn.execute("SELECT COALESCE(SUM(total_sum),0) revenue,COALESCE(SUM(cost_total),0) cost,COUNT(*) n FROM orders WHERE substr(date,1,10)=? AND COALESCE(status,'') NOT IN ('Bekor','Bekor qilindi')", (today,)).fetchone()
+        e = conn.execute("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE substr(date,1,10)=?", (today,)).fetchone()['total']
+        debt = conn.execute('SELECT COALESCE(SUM(debt),0) FROM shops').fetchone()[0]
+        top_debts = conn.execute('SELECT name,debt FROM shops WHERE COALESCE(debt,0)>0 ORDER BY debt DESC LIMIT 8').fetchall()
+        products = conn.execute('SELECT name,stock,min_stock FROM products ORDER BY name').fetchall()
+        low = [dict(x) for x in products if safe_number(x['min_stock'])>0 and safe_number(x['stock'])<=safe_number(x['min_stock'])]
+        batches = conn.execute("SELECT product_name,expiry_date,qty FROM stock_batches WHERE expiry_date!='' AND expiry_date<=? ORDER BY expiry_date LIMIT 10", ((datetime.now()+timedelta(days=30)).strftime('%Y-%m-%d'),)).fetchall()
+        workers = conn.execute("SELECT COUNT(*) FROM users WHERE lower(role) LIKE '%sex%' AND lower(role) NOT LIKE '%admin%'").fetchone()[0]
+        attendance = conn.execute('SELECT COUNT(*) FROM staff_attendance WHERE work_date=? AND status IN (\'Keldi\',\'Keldi\')', (today,)).fetchone()[0]
+        net = safe_number(r['revenue'])-safe_number(r['cost'])-safe_number(e)
+    finally:
+        conn.close()
+    tpl=r"""<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xoji Aka — Rahbar paneli</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background:#f3f6fb;color:#172033}.wrap{max-width:1100px;margin:auto;padding:14px}.tile{border:0;border-radius:16px;box-shadow:0 4px 18px #15234a0d}.muted{color:#64748b}.metric{font-size:clamp(1.25rem,4vw,2rem);font-weight:800;overflow-wrap:anywhere}.quick a{min-width:125px}</style></head><body><main class="wrap"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h3 class="mb-0">📱 Xoji Aka — Rahbar paneli</h3><small class="muted">{{today}} · Tezkor boshqaruv</small></div><a class="btn btn-outline-secondary" href="/">To‘liq bosh panel</a></div><div class="row g-3 mb-3">{% for title,value,color in [('Bugungi tushum',revenue,'primary'),('Taxminiy sof foyda',net,'success'),('Umumiy do‘kon qarzi',debt,'danger'),('Buyurtmalar',orders,'dark')] %}<div class="col-6 col-lg-3"><div class="card tile p-3 h-100"><div class="muted small">{{title}}</div><div class="metric text-{{color}}">{{'{:,.0f}'.format(value)}}{% if title!='Buyurtmalar' %}<small class="fs-6"> so‘m</small>{% else %}<small class="fs-6"> ta</small>{% endif %}</div></div></div>{% endfor %}</div><div class="quick d-flex flex-wrap gap-2 mb-3"><a class="btn btn-primary" href="/#tab-orders">🛒 Buyurtmalar</a><a class="btn btn-success" href="/#tab-inventory">📦 Sklad</a><a class="btn btn-warning" href="/#tab-kassa">💰 Kassa</a><a class="btn btn-outline-dark" href="/audit_history">📜 Harakatlar tarixi</a></div><div class="row g-3"><div class="col-lg-6"><div class="card tile p-3"><h5>💳 Eng katta qarzlar</h5>{% for x in debts %}<div class="d-flex justify-content-between border-bottom py-2 gap-2"><b>{{x.name}}</b><span class="text-danger fw-bold text-nowrap">{{'{:,.0f}'.format(x.debt)}} so‘m</span></div>{% else %}<small class="muted">Qarz mavjud emas.</small>{% endfor %}</div></div><div class="col-lg-6"><div class="card tile p-3"><h5>🔔 Ombor ogohlantirishlari</h5><div>Kam qoldiq: <b>{{low|length}}</b></div>{% for x in low %}<div class="text-danger small">{{x.name}} — {{x.stock}} / minimum {{x.min_stock}}</div>{% endfor %}<hr><div>Muddati 30 kun ichida tugaydigan partiyalar: <b>{{batches|length}}</b></div>{% for x in batches %}<div class="text-danger small">{{x.product_name}} — {{x.expiry_date}} — {{x.qty}}</div>{% endfor %}</div></div><div class="col-12"><div class="card tile p-3"><h5>🏭 Sex holati</h5><div>Xodimlar: <b>{{workers}}</b> · Bugun davomat qaydi bor: <b>{{attendance}}</b></div><small class="muted">Davomat va sex xodimlari ro‘yxati to‘liq bosh paneldagi Kassa / Davomat bo‘limida boshqariladi.</small></div></div></div></main></body></html>"""
+    return render_template_string(tpl,today=today,revenue=safe_number(r['revenue']),net=net,debt=safe_number(debt),orders=int(r['n']),debts=top_debts,low=low,batches=batches,workers=workers,attendance=attendance)
+
+
 @app.route('/global_search')
 def global_search():
     if not session.get('logged_in'): return redirect(url_for('login'))
@@ -5749,13 +5806,13 @@ def supplier_edit(supplier_id):
 def business_plus_credit():
     if not _plus_ok(): return redirect(url_for('login'))
     sid=int(safe_number(request.form.get('shop_id'),0,minimum=1)); limit=safe_number(request.form.get('credit_limit'),0,minimum=0)
-    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE shops SET credit_limit=? WHERE id=?',(limit,sid)); log_audit(conn,'Kredit limiti o‘zgartirildi','shop',sid,str(limit)); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='finance'))
+    conn=get_db_connection(); ensure_business_plus_schema(conn); old=conn.execute('SELECT credit_limit FROM shops WHERE id=?',(sid,)).fetchone(); conn.execute('UPDATE shops SET credit_limit=? WHERE id=?',(limit,sid)); log_audit(conn,'Kredit limiti o‘zgartirildi','shop',sid,f"Eski={safe_number(old['credit_limit']) if old else 0:.0f}; yangi={limit:.0f}"); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='finance'))
 
 @app.route('/business_plus/barcode',methods=['POST'])
 def business_plus_barcode():
     if not _plus_ok(): return redirect(url_for('login'))
     pid=int(safe_number(request.form.get('product_id'),0,minimum=1)); code=(request.form.get('barcode') or '').strip(); minimum=safe_number(request.form.get('min_stock'),0,minimum=0)
-    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE products SET barcode=?,min_stock=? WHERE id=?',(code,minimum,pid)); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='warehouse'))
+    conn=get_db_connection(); ensure_business_plus_schema(conn); old=conn.execute('SELECT barcode,min_stock,name FROM products WHERE id=?',(pid,)).fetchone(); conn.execute('UPDATE products SET barcode=?,min_stock=? WHERE id=?',(code,minimum,pid)); log_audit(conn,'Shtrix-kod yoki minimal qoldiq tahrirlandi','product',pid,f"mahsulot={old['name'] if old else pid}; eski_kod={old['barcode'] if old else ''}; yangi_kod={code}; eski_min={safe_number(old['min_stock']) if old else 0}; yangi_min={minimum}"); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='warehouse'))
 
 @app.route('/business_plus/scan')
 def business_plus_scan():
@@ -5770,7 +5827,7 @@ def business_plus_batch():
     name=(request.form.get('product_name') or '').strip(); qty=safe_number(request.form.get('qty'),0,minimum=0.01); code=(request.form.get('batch_code') or '').strip(); produced=request.form.get('produced_date') or ''; expiry=request.form.get('expiry_date') or ''; unit=safe_number(request.form.get('unit_cost'),0,minimum=0)
     conn=get_db_connection(); ensure_business_plus_schema(conn); p=conn.execute('SELECT id FROM products WHERE name=?',(name,)).fetchone()
     if not p: conn.close(); return 'Mahsulot topilmadi',404
-    stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor) VALUES(?,?,?,?,?,?,?,?)',(name,code,qty,produced,expiry,unit,stamp,current_actor())); conn.execute('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=?',(qty,p['id'])); record_stock_movement(conn,name,qty,'Ishlab chiqarish partiyasi',code or expiry); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='warehouse'))
+    stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor) VALUES(?,?,?,?,?,?,?,?)',(name,code,qty,produced,expiry,unit,stamp,current_actor())); batch_id=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; conn.execute('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=?',(qty,p['id'])); record_stock_movement(conn,name,qty,'Ishlab chiqarish partiyasi',code or expiry); log_audit(conn,'Ishlab chiqarish partiyasi yaratildi','stock_batch',batch_id,f'{name}; miqdor={qty}; partiya={code}; yaroqlilik={expiry}; tannarx={unit}'); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='warehouse'))
 
 @app.route('/business_plus/gps_visit',methods=['POST'])
 def business_plus_gps_visit():
@@ -5802,7 +5859,7 @@ def business_plus_report_settings():
     enabled=1 if request.form.get('enabled')=='1' else 0; clock=request.form.get('send_time') or '20:00'
     try: datetime.strptime(clock,'%H:%M')
     except ValueError: clock='20:00'
-    conn=get_db_connection(); ensure_business_plus_schema(conn); conn.execute('UPDATE daily_report_settings SET enabled=?,send_time=? WHERE id=1',(enabled,clock)); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='finance'))
+    conn=get_db_connection(); ensure_business_plus_schema(conn); old=conn.execute('SELECT enabled,send_time FROM daily_report_settings WHERE id=1').fetchone(); conn.execute('UPDATE daily_report_settings SET enabled=?,send_time=? WHERE id=1',(enabled,clock)); log_audit(conn,'Telegram hisobot sozlamasi o‘zgartirildi','settings','daily_report',f"Eski: yoqilgan={old['enabled'] if old else 0}, vaqt={old['send_time'] if old else ''}; yangi: yoqilgan={enabled}, vaqt={clock}"); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='finance'))
 
 @app.route('/business_plus/assistant',methods=['POST'])
 def business_plus_assistant():
