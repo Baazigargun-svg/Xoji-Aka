@@ -34,9 +34,10 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAHOGCEWCIAqeLzHTJeNVkbHzyVc5-0acb4").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAFMCKiQxhHw2SiwXB3Sq9ytLZ4vxfxPYyI").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
+CATALOG_GROUP_ID = os.environ.get('CATALOG_GROUP_ID') or SEX_GROUP_ID
 
 # TeleBot dekoratorlari token bo'lmaganda ham yuklanishi uchun vaqtinchalik qiymat.
 # Haqiqiy polling faqat BOT_TOKEN berilganda ishga tushadi.
@@ -53,13 +54,13 @@ _file_logger.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(mes
 app.logger.addHandler(_file_logger)
 app.logger.setLevel(logging.INFO)
 BACKUP_DIR = os.path.join(BASE_DIR, 'db_backups')
-WEB_BASE_URL = (os.environ.get('WEB_BASE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://xoji-aka-factory.onrender.com').rstrip('/')
+WEB_BASE_URL = (os.environ.get('WEB_BASE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'https://xoji-aka.onrender.com').rstrip('/')
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'bigbang0231.').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 CATALOG_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'catalog')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -126,7 +127,15 @@ def ensure_catalog_weight_column(conn):
     columns = {row['name'] for row in conn.execute('PRAGMA table_info(catalog_items)').fetchall()}
     if 'weight' not in columns:
       conn.execute("ALTER TABLE catalog_items ADD COLUMN weight TEXT DEFAULT ''")
-      conn.commit()
+    if 'category' not in columns:
+      conn.execute("ALTER TABLE catalog_items ADD COLUMN category TEXT DEFAULT 'Boshqa'")
+    if 'sort_order' not in columns:
+      conn.execute("ALTER TABLE catalog_items ADD COLUMN sort_order INTEGER DEFAULT 0")
+    if 'product_id' not in columns:
+      conn.execute("ALTER TABLE catalog_items ADD COLUMN product_id INTEGER")
+    conn.execute("UPDATE catalog_items SET sort_order=id WHERE sort_order IS NULL OR sort_order=0")
+    conn.execute("INSERT OR IGNORE INTO catalog_categories(name, sort_order) SELECT category, COALESCE(MIN(sort_order),0) FROM catalog_items WHERE TRIM(COALESCE(category,''))<>'' GROUP BY category")
+    conn.commit()
   except Exception:
     app.logger.exception('Katalog og‘irligi ustunini tekshirishda xato')
 
@@ -393,6 +402,18 @@ def init_web_db():
       image_filename TEXT DEFAULT '',
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL)''')
+  cursor.execute('''CREATE TABLE IF NOT EXISTS catalog_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 0)''')
+  cursor.execute('''CREATE TABLE IF NOT EXISTS order_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      shop_name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      payment_date TEXT NOT NULL,
+      actor TEXT DEFAULT 'Tizim',
+      note TEXT DEFAULT '')''')
   cursor.execute(
       '''CREATE TABLE IF NOT EXISTS payment_requests 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, shop_name TEXT, ekspeditor_name TEXT, amount REAL, status TEXT DEFAULT 'pending', date TEXT)'''
@@ -1305,8 +1326,95 @@ def ekspeditor_confirm_delivery(call):
     conn.commit()
     conn.close()
     
-    bot.answer_callback_query(call.id, "Buyurtma yetkazildi deb tasdiqlandi va do'kon qarzdorligi yangilandi!")
-    bot.edit_message_text(f"✅ **Yetkazildi va tasdiqlandi!** (#{order_id})\nDo'kon qarzdorligi hisoblandi.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    pay_markup = types.InlineKeyboardMarkup()
+    pay_markup.add(types.InlineKeyboardButton("💳 To‘lov kiritish", callback_data=f"order_pay_{order_id}"))
+    bot.answer_callback_query(call.id, "Buyurtma yetkazildi. To‘lovni to‘liq yoki qisman kiritishingiz mumkin.")
+    bot.edit_message_text(
+        f"✅ <b>Yetkazildi va tasdiqlandi!</b> (#{order_id})\n"
+        f"Do‘kon qarzdorligiga {safe_number(order_sum):,.0f} so‘m qo‘shildi. "
+        "Agar do‘kon pul bergan bo‘lsa, quyidagi tugmani bosing.",
+        call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=pay_markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('order_pay_'))
+def order_payment_start(call):
+    try:
+        order_id=int(call.data.rsplit('_',1)[1])
+    except Exception:
+        bot.answer_callback_query(call.id,'Buyurtma raqami noto‘g‘ri.')
+        return
+    conn=get_db_connection()
+    order=conn.execute("SELECT id,shop_name,total_sum,status FROM orders WHERE id=?",(order_id,)).fetchone()
+    paid=conn.execute("SELECT COALESCE(SUM(amount),0) AS s FROM order_payments WHERE order_id=?",(order_id,)).fetchone()
+    conn.close()
+    if not order or order['status']!='Yetkazildi':
+        bot.answer_callback_query(call.id,'Avval buyurtma yetkazilgan bo‘lishi kerak.')
+        return
+    remaining=max(0,safe_number(order['total_sum'])-safe_number(paid['s'] if paid else 0))
+    if remaining<=0:
+        bot.answer_callback_query(call.id,'Bu nakladnoy to‘liq to‘langan.')
+        return
+    user_steps[call.from_user.id]={'pending_order_payment':order_id,'payment_remaining':remaining}
+    bot.answer_callback_query(call.id)
+    msg=bot.send_message(call.message.chat.id,
+        f"💳 <b>#{order_id} nakladnoy to‘lovi</b>\\n"
+        f"Do‘kon: {order['shop_name']}\\n"
+        f"Qolgan summa: {remaining:,.0f} so‘m\\n\\n"
+        "Qabul qilingan to‘lov miqdorini kiriting (qisman yoki to‘liq):",
+        parse_mode='HTML')
+    bot.register_next_step_handler(msg, order_payment_amount_received)
+
+def order_payment_amount_received(message):
+    state=user_steps.get(message.from_user.id,{})
+    order_id=state.get('pending_order_payment')
+    remaining=safe_number(state.get('payment_remaining'))
+    if not order_id:
+        bot.send_message(message.chat.id,'To‘lov amali topilmadi. Nakladnoydagi tugmani qayta bosing.')
+        return
+    try:
+        amount=float(str(message.text or '').replace(' ','').replace(',','.'))
+        if amount<=0 or amount>remaining:
+            raise ValueError()
+    except Exception:
+        msg=bot.send_message(message.chat.id,f"0 dan katta va {remaining:,.0f} so‘mdan oshmaydigan summani kiriting.")
+        bot.register_next_step_handler(msg,order_payment_amount_received)
+        return
+    conn=get_db_connection()
+    order=conn.execute("SELECT shop_name,total_sum,status FROM orders WHERE id=?",(order_id,)).fetchone()
+    if not order or order['status']!='Yetkazildi':
+        conn.close()
+        user_steps.pop(message.from_user.id,None)
+        bot.send_message(message.chat.id,'Buyurtma topilmadi yoki yetkazilgan holatda emas.')
+        return
+    shop=conn.execute('SELECT debt FROM shops WHERE name=?',(order['shop_name'],)).fetchone()
+    if not shop:
+        conn.close()
+        bot.send_message(message.chat.id,'Do‘kon topilmadi.')
+        return
+    current_debt=safe_number(shop['debt'])
+    paid_now=min(amount,current_debt)
+    if paid_now<=0:
+        conn.close()
+        bot.send_message(message.chat.id,'Do‘konda kamaytirish uchun qarzdorlik yo‘q.')
+        return
+    now=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute('UPDATE shops SET debt=? WHERE name=?',(max(0,current_debt-paid_now),order['shop_name']))
+    conn.execute('INSERT INTO incomes(source,amount,date) VALUES(?,?,?)',
+        (f"#{order_id} nakladnoy to‘lovi ({order['shop_name']})",paid_now,now))
+    conn.execute('INSERT INTO order_payments(order_id,shop_name,amount,payment_date,actor,note) VALUES(?,?,?,?,?,?)',
+        (order_id,order['shop_name'],paid_now,now,str(message.from_user.id),'Nakladnoy bo‘yicha to‘lov'))
+    log_audit(conn,'Nakladnoy bo‘yicha to‘lov kiritildi','order',order_id,
+        f"do‘kon={order['shop_name']}; to‘lov={paid_now}; qarz {current_debt}->{max(0,current_debt-paid_now)}")
+    conn.commit()
+    total_paid=conn.execute('SELECT COALESCE(SUM(amount),0) AS s FROM order_payments WHERE order_id=?',(order_id,)).fetchone()['s']
+    conn.close()
+    user_steps.pop(message.from_user.id,None)
+    remaining=max(0,safe_number(order['total_sum'])-safe_number(total_paid))
+    bot.send_message(message.chat.id,
+        f"✅ #{order_id} nakladnoy uchun {paid_now:,.0f} so‘m to‘lov kassaga kirim qilindi.\\n"
+        f"Ushbu nakladnoy bo‘yicha qolgan to‘lov: {remaining:,.0f} so‘m.",
+        reply_markup=get_main_menu('ekspeditor'))
 
 
 @bot.message_handler(func=lambda message: message.text == '📜 Yetkazilgan Buyurtmalar Tarixi')
@@ -2067,9 +2175,15 @@ def change_status_logic(call):
           (order_id, new_status, datetime.now().strftime('%Y-%m-%d %H:%M')))
   conn.commit()
   conn.close()
-  bot.send_message(
-      call.message.chat.id, f'✅ Status: <b>{new_status}</b>', parse_mode='HTML'
-  )
+  if new_status == 'Yetkazildi' and ord_data:
+      pay_markup=types.InlineKeyboardMarkup()
+      pay_markup.add(types.InlineKeyboardButton('💳 To‘lov kiritish',callback_data=f"order_pay_{order_id}"))
+      bot.send_message(call.message.chat.id,
+          f'✅ Status: <b>{new_status}</b> (#{order_id})\n'
+          'Do‘kon pul to‘lagan bo‘lsa, to‘liq yoki qisman to‘lovni shu nakladnoyga kiriting.',
+          parse_mode='HTML',reply_markup=pay_markup)
+  else:
+      bot.send_message(call.message.chat.id, f'✅ Status: <b>{new_status}</b>', parse_mode='HTML')
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('approve_'))
@@ -2745,7 +2859,7 @@ AGENT_WEBAPP_TEMPLATE = """
 
     <div class="card-mobile">
         <h6 class="fw-bold mb-3">🖼 Do‘konchiga ko‘rsatish uchun katalog</h6>
-        <div class="row g-2">{% for c in catalog_items %}<div class="col-6"><div class="card h-100">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:130px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body p-2"><b>{{ c['name'] }}</b><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><small>{{ c['description'] or '' }}</small></div></div></div>{% else %}<div class="col-12 text-muted">Katalog hali joylanmagan.</div>{% endfor %}</div>
+        <div class="row g-2">{% for c in catalog_items %}<div class="col-6"><div class="card h-100">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:130px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body p-2"><b>{{ c['name'] }}</b><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><small>{{ c['weight'] or '' }} {{ c['description'] or '' }}</small><button type="button" class="btn btn-sm btn-success w-100 mt-2" onclick='addCatalogItem({{ (c['order_product_name'] or c['name'])|tojson }})'>🛒 Savatchaga qo‘shish</button></div></div></div>{% else %}<div class="col-12 text-muted">Katalog hali joylanmagan.</div>{% endfor %}</div>
     </div>
 
     <div class="card-mobile">
@@ -2819,6 +2933,36 @@ AGENT_WEBAPP_TEMPLATE = """
         </div>
     </div>
 <script>
+    function addCatalogItem(productName) {
+        const rows = document.querySelectorAll('#mini-items .item-row');
+        for (const row of rows) {
+            const select = row.querySelector('select[name="product_name"]');
+            if (select && [...select.options].some(o => o.value === productName)) {
+                if (select.value === productName) {
+                    const q = row.querySelector('input[name="qty"]');
+                    q.value = String((parseFloat(q.value) || 0) + 1);
+                } else {
+                    select.value = productName;
+                }
+                document.getElementById('mini-items').scrollIntoView({behavior:'smooth',block:'center'});
+                return;
+            }
+        }
+        const first = document.querySelector('#mini-items .item-row');
+        if (!first) return;
+        const row = first.cloneNode(true);
+        row.querySelector('select').selectedIndex = 0;
+        row.querySelector('input[name="qty"]').value = '1';
+        const select = row.querySelector('select[name="product_name"]');
+        if (![...select.options].some(o => o.value === productName)) {
+            alert('Bu katalog mahsuloti ombordagi mahsulotlar ro‘yxatiga nomi bo‘yicha bog‘lanmagan. Admin mahsulot nomini tekshirsin.');
+            return;
+        }
+        select.value = productName;
+        document.getElementById('mini-items').appendChild(row);
+        document.getElementById('mini-items').scrollIntoView({behavior:'smooth',block:'center'});
+    }
+
     function addMiniRow() {
         let container = document.getElementById('mini-items');
         let row = container.querySelector('.item-row').cloneNode(true);
@@ -2854,6 +2998,7 @@ def agent_webapp(tg_id):
         return "Havola eskirgan yoki imzosi mos emas. Telegram botga qayting va '🌐 Web kabinetim' tugmasini qayta bosing.", 403
     conn = get_db_connection()
     ensure_business_plus_schema(conn)
+    ensure_catalog_weight_column(conn)
     user = conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
     if not user:
         conn.close()
@@ -2900,6 +3045,7 @@ def agent_webapp(tg_id):
         cost_total = 0
         items_text = ''
         excel_cart_items = []
+        found_items = 0
         
         for i in range(len(product_names)):
             p_name = product_names[i]
@@ -2911,6 +3057,7 @@ def agent_webapp(tg_id):
                 
             prod = conn.execute('SELECT optom_price, chakana_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
             if prod:
+                found_items += 1
                 price = prod['optom_price'] if price_type == 'optom' else (prod['chakana_price'] or prod['optom_price'])
                 stock_p = prod['stock'] or 0
                 if qty <= 0:
@@ -2926,7 +3073,14 @@ def agent_webapp(tg_id):
                 conn.execute('UPDATE products SET stock = ? WHERE id = ?', (stock_p - qty, prod['id']))
                 record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Agent webapp')
                 excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
-                
+            else:
+                conn.rollback()
+                conn.close()
+                return 'Ombor mahsuloti topilmadi yoki katalog mahsuloti ombor mahsulotiga bog‘lanmagan: ' + str(p_name), 400
+
+        if found_items == 0:
+            conn.close()
+            return 'Savatchada ombor mahsulotlariga mos keladigan mahsulot yo‘q. Katalog nomini ombor mahsuloti bilan bir xil qiling.', 400
         shop_credit=conn.execute('SELECT debt,credit_limit FROM shops WHERE name=?',(shop_name,)).fetchone()
         if shop_credit and safe_number(shop_credit['credit_limit'])>0 and shop_credit_used(conn, shop_name)+total_sum>safe_number(shop_credit['credit_limit']):
             used_credit=shop_credit_used(conn, shop_name); limit_value=safe_number(shop_credit['credit_limit'])
@@ -2973,7 +3127,11 @@ def agent_webapp(tg_id):
         shops = conn.execute("SELECT * FROM shops ORDER BY name").fetchall()
         
     products = conn.execute("SELECT * FROM products ORDER BY name").fetchall()
-    catalog_items = conn.execute('SELECT * FROM catalog_items WHERE active = 1 ORDER BY id DESC').fetchall()
+    catalog_items = conn.execute('''SELECT ci.*, p.name AS order_product_name
+        FROM catalog_items ci LEFT JOIN products p ON p.id=ci.product_id
+        WHERE ci.active=1
+        ORDER BY (SELECT sort_order FROM catalog_categories WHERE name=ci.category),
+                 COALESCE(ci.sort_order,ci.id), ci.id''').fetchall()
     my_orders = conn.execute("SELECT * FROM orders WHERE agent_name = ? ORDER BY id DESC LIMIT 20", (agent_name,)).fetchall()
     conn.close()
     
@@ -4090,9 +4248,12 @@ HTML_TEMPLATE = """
     <!-- 📌 KATEGORIYA INPUTINI SHU YERGA QO'SHASIZ -->
     <div class="col-md-2">
         <label class="form-label">Kategoriya</label>
-        <input type="text" name="category" class="form-control" placeholder="Masalan: Yarim tayyor mahsulotlari" required>
+        <input type="text" name="category" class="form-control" list="catalogCategoryOptions" placeholder="Masalan: Yarim tayyor mahsulotlar" required>
+        <datalist id="catalogCategoryOptions">{% for cc in catalog_categories %}<option value="{{ cc['name'] }}">{% endfor %}</datalist>
     </div>
 
+    <div class="col-md-1"><label class="form-label">Tartib №</label><input class="form-control" type="number" name="sort_order" min="0" value="0"></div>
+    <div class="col-md-3"><label class="form-label">Ombor mahsulotiga bog‘lash</label><select class="form-select" name="product_id"><option value="">Bog‘lanmagan</option>{% for p in products %}<option value="{{ p['id'] }}">{{ p['name'] }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label">Narxi (so‘m)</label><input class="form-control" type="number" min="0" step="any" name="price" required></div>
     <div class="col-md-2"><label class="form-label">Og‘irligi</label><input class="form-control" name="weight" maxlength="40" placeholder="Masalan: 500 g"></div>
     <div class="col-md-3"><label class="form-label">Rasm (JPG/PNG/WEBP)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
@@ -4100,8 +4261,32 @@ HTML_TEMPLATE = """
     <div class="col-md-1 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Qo‘shish</button></div>
 </form>
                     </div>
+                    <div class="mb-3 p-3 rounded border bg-light">
+                        <div class="fw-bold mb-2">📂 Kategoriyalar ketma-ketligi</div>
+                        <div class="d-flex flex-wrap gap-2">{% for cc in catalog_categories %}
+                          <div class="badge bg-secondary p-2">{{ cc['name'] }}
+                            <form method="POST" action="/catalog_category_move" class="d-inline"><input type="hidden" name="category" value="{{ cc['name'] }}"><input type="hidden" name="direction" value="up"><button class="btn btn-sm btn-light py-0 px-1">↑</button></form>
+                            <form method="POST" action="/catalog_category_move" class="d-inline"><input type="hidden" name="category" value="{{ cc['name'] }}"><input type="hidden" name="direction" value="down"><button class="btn btn-sm btn-light py-0 px-1">↓</button></form>
+                          </div>{% endfor %}
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <a class="btn btn-outline-success btn-sm" href="/catalog" target="_blank">🌐 Ommaviy katalog havolasini ochish</a>
+                        <form method="POST" action="/catalog_publish_group" class="m-0"><button class="btn btn-outline-primary btn-sm">📣 Katalog havolasini guruhga yuborish</button></form>
+                    </div>
                     <div class="row g-3">
-                    {% for c in catalog_items %}<div class="col-6 col-md-3"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:180px;object-fit:cover" alt="{{ c['name'] }}">{% endif %}<div class="card-body"><h6 class="fw-bold">{{ c['name'] }}</h6><div class="text-success fw-bold">{{ '{:,.0f}'.format(c['price'] or 0) }} so‘m</div><p class="small text-muted">{{ c['weight'] or '' }} {{ c['description'] or '' }}</p><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger w-100">O‘chirish</button></form></div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
+                    {% for c in catalog_items %}<div class="col-12 col-md-6 col-xl-4"><div class="card h-100 shadow-sm border-0">{% if c['image_filename'] %}<img src="/catalog-image/{{ c['image_filename'] }}" class="card-img-top" style="height:190px;object-fit:contain;background:#f4f6f8" alt="{{ c['name'] }}">{% endif %}<div class="card-body">
+                    <form action="/catalog_update/{{ c['id'] }}" method="POST" enctype="multipart/form-data">
+                      <div class="row g-2"><div class="col-8"><label class="form-label small">Mahsulot nomi</label><input class="form-control form-control-sm" name="name" value="{{ c['name'] }}" required></div><div class="col-4"><label class="form-label small">Tartib №</label><input class="form-control form-control-sm" type="number" min="0" name="sort_order" value="{{ c['sort_order'] or c['id'] }}"></div>
+                      <div class="col-6"><label class="form-label small">Kategoriya</label><input class="form-control form-control-sm" name="category" list="catalogCategoryOptions" value="{{ c['category'] or 'Boshqa' }}" required></div><div class="col-6"><label class="form-label small">Narxi</label><input class="form-control form-control-sm" type="number" min="0" step="any" name="price" value="{{ c['price'] or 0 }}" required></div>
+                      <div class="col-6"><label class="form-label small">Og‘irligi</label><input class="form-control form-control-sm" name="weight" value="{{ c['weight'] or '' }}"></div>
+                      <div class="col-12"><label class="form-label small">Ombor mahsulotiga bog‘lash</label><select class="form-select form-select-sm" name="product_id"><option value="">Bog‘lanmagan</option>{% for p in products %}<option value="{{ p['id'] }}" {% if c['product_id']==p['id'] %}selected{% endif %}>{{ p['name'] }}</option>{% endfor %}</select></div>
+                      <div class="col-6"><label class="form-label small">Yangi rasm (ixtiyoriy)</label><input class="form-control form-control-sm" type="file" name="image" accept=".jpg,.jpeg,.png,.webp"></div>
+                      <div class="col-12"><label class="form-label small">Izoh</label><input class="form-control form-control-sm" name="description" value="{{ c['description'] or '' }}"></div>
+                      </div><button class="btn btn-sm btn-primary w-100 mt-2">💾 O‘zgarishlarni saqlash</button>
+                    </form>
+                    <div class="d-flex gap-1 mt-2"><form action="/catalog_move/{{ c['id'] }}" method="POST" class="flex-fill"><input type="hidden" name="direction" value="up"><button class="btn btn-sm btn-outline-secondary w-100">⬆️ Yuqoriga</button></form><form action="/catalog_move/{{ c['id'] }}" method="POST" class="flex-fill"><input type="hidden" name="direction" value="down"><button class="btn btn-sm btn-outline-secondary w-100">⬇️ Pastga</button></form><form action="/catalog_delete/{{ c['id'] }}" method="POST" onsubmit="return confirm('Katalogdan o‘chirilsinmi?')"><button class="btn btn-sm btn-outline-danger">🗑</button></form></div>
+                    </div></div></div>{% else %}<p class="text-muted">Katalog hali bo‘sh.</p>{% endfor %}
                     </div>
                 </div>
                 <div class="tab-pane fade" id="tab-reports">
@@ -4510,7 +4695,7 @@ def audit_web_post(response):
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'agent_catalog_webapp', 'catalog_image', 'healthz']
+    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'agent_catalog_webapp', 'public_catalog', 'catalog_image', 'healthz']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         return redirect(url_for('login'))
 
@@ -4528,7 +4713,8 @@ def operator_dashboard():
   products = conn.execute('SELECT * FROM products ORDER BY name').fetchall()
   users = conn.execute('SELECT * FROM users').fetchall()
   product_incomes_history = conn.execute('SELECT * FROM product_incomes ORDER BY id DESC LIMIT 50').fetchall()
-  catalog_items = conn.execute('SELECT * FROM catalog_items ORDER BY id DESC').fetchall()
+  catalog_items = conn.execute('SELECT * FROM catalog_items ORDER BY (SELECT sort_order FROM catalog_categories WHERE name=catalog_items.category), COALESCE(sort_order, id), id').fetchall()
+  catalog_categories = conn.execute('SELECT * FROM catalog_categories ORDER BY sort_order, name').fetchall()
   today_iso = datetime.now().strftime('%Y-%m-%d')
 
   orders = conn.execute("SELECT * FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? ORDER BY id DESC", (start_date, end_date)).fetchall()
@@ -4775,6 +4961,7 @@ def operator_dashboard():
       visit_alerts=visit_alerts,
       today_iso=today_iso,
       catalog_items=catalog_items,
+      catalog_categories=catalog_categories,
   )
 
 
@@ -4992,25 +5179,39 @@ AGENT_CATALOG_TEMPLATE = """
 <style>
 :root{color-scheme:light;--ink:#172033;--muted:#687386;--accent:#13795b;--line:#e5eaf0}
 *{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:var(--ink);font-family:Arial,sans-serif}
-.wrap{max-width:900px;margin:auto;padding:16px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#123d35;color:white;padding:16px 18px;border-radius:18px;margin-bottom:16px}
+.wrap{width:100%;max-width:1600px;margin:0 auto;padding:clamp(8px,2vw,24px)}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#123d35;color:white;padding:16px 18px;border-radius:18px;margin-bottom:16px}
 .top h1{font-size:19px;margin:0}.top small{opacity:.8}.counter{font-size:13px;background:#ffffff22;padding:7px 11px;border-radius:20px;white-space:nowrap}
 .stage{background:white;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 8px 28px #14213d0d}
-.slide{display:none}.slide.active{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,.8fr);min-height:420px}
-.photo{background:#eef2f6;display:flex;align-items:center;justify-content:center;min-height:320px;padding:12px}.photo img{display:block;width:100%;height:100%;max-height:560px;object-fit:contain;border-radius:12px}
-.info{padding:25px 22px;display:flex;flex-direction:column;justify-content:center;gap:12px}.category{color:var(--accent);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.slide{display:none}.slide.active{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,.7fr);min-height:min(76vh,900px)}
+.photo{background:#eef2f6;display:flex;align-items:center;justify-content:center;min-height:65vh;padding:8px}.photo img{display:block;width:100%;height:100%;max-height:78vh;object-fit:contain;border-radius:12px}
+.info{padding:clamp(16px,3vw,38px);display:flex;flex-direction:column;justify-content:center;gap:12px}.category{color:var(--accent);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 .name{font-size:25px;line-height:1.2;font-weight:800;margin:0}.price{font-size:25px;color:var(--accent);font-weight:800}.weight{display:inline-block;background:#edf6f2;color:#145b45;border-radius:10px;padding:9px 12px;font-weight:700;width:max-content}.desc{font-size:14px;line-height:1.5;color:var(--muted);white-space:pre-wrap}
 .controls{display:flex;align-items:center;justify-content:center;gap:14px;padding:15px}.nav{border:0;background:#123d35;color:white;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer}.nav:disabled{opacity:.35;cursor:default}.dots{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;padding:0 14px 16px}.dot{width:7px;height:7px;border:0;border-radius:50%;background:#cbd5e1;padding:0}.dot.active{background:var(--accent);width:20px;border-radius:10px}.empty{padding:40px;text-align:center;color:var(--muted)}
-@media(max-width:620px){.wrap{padding:10px}.slide.active{grid-template-columns:1fr;min-height:0}.photo{min-height:260px;height:44vh;max-height:430px}.photo img{max-height:100%}.info{padding:17px 18px;gap:8px}.name{font-size:21px}.price{font-size:22px}.top{padding:13px 14px}.nav{padding:11px 14px}}
+@media(max-width:760px){.wrap{padding:6px}.slide.active{grid-template-columns:1fr;min-height:0}.photo{min-height:48vh;height:54vh;max-height:650px}.photo img{max-height:100%}.info{padding:17px 18px;gap:8px}.name{font-size:21px}.price{font-size:22px}.top{padding:13px 14px}.nav{padding:11px 14px}}
 </style>
 </head>
 <body><main class="wrap">
 <header class="top"><div><h1>🖼 XOJI AKA KATALOGI</h1><small>Mahsulotlarni slayd qilib ko‘ring</small></div><div class="counter" id="counter">0 / 0</div></header>
+{% if order_action_url %}
+<section class="stage" style="padding:14px;margin-bottom:14px">
+  <form id="catalogOrderForm" method="POST" action="{{ order_action_url }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+      <label>Do‘konni tanlang<select name="shop_name" required style="display:block;width:100%;padding:10px;border:1px solid #d5dce5;border-radius:10px"><option value="">Do‘kon...</option>{% for sh in shops %}<option value="{{ sh['name'] }}">{{ sh['name'] }}</option>{% endfor %}</select></label>
+      <label>Narx turi<select name="price_type" style="display:block;width:100%;padding:10px;border:1px solid #d5dce5;border-radius:10px"><option value="optom">Optom</option><option value="chakana">Chakana</option></select></label>
+      <label>Izoh<input name="comment" placeholder="Buyurtma izohi (ixtiyoriy)" style="display:block;width:100%;padding:10px;border:1px solid #d5dce5;border-radius:10px"></label>
+    </div>
+    <div id="catalogBasket" style="margin-top:10px;font-weight:700">🛒 Savatcha: 0 ta mahsulot</div>
+    <div id="catalogHiddenInputs"></div>
+    <button id="catalogSubmit" type="submit" class="nav" style="width:100%;margin-top:10px" disabled>✅ Savatchadagi mahsulotlarni buyurtmaga yuborish</button>
+  </form>
+</section>
+{% endif %}
 {% if items %}
-<section class="stage" aria-label="Mahsulotlar karuseli">
+<section class="stage catalog-stage" aria-label="Mahsulotlar karuseli">
 {% for item in items %}
 <article class="slide {% if loop.first %}active{% endif %}" data-index="{{ loop.index0 }}">
-<div class="photo">{% if item['image_filename'] %}<img src="{{ item['image_src'] }}" alt="{{ item['name'] }}" {% if not loop.first %}loading="eager"{% endif %}>{% else %}<div class="empty">Rasm mavjud emas</div>{% endif %}</div>
-<div class="info"><div class="category">{{ item['category'] or 'Boshqa' }}</div><h2 class="name">{{ item['name'] }}</h2><div class="price">{{ '{:,.0f}'.format(item['price'] or 0) }} so‘m</div>{% if item['weight'] %}<div class="weight">⚖️ {{ item['weight'] }}</div>{% endif %}{% if item['description'] %}<div class="desc">{{ item['description'] }}</div>{% endif %}</div>
+<div class="photo">{% if item['image_filename'] %}<img src="{{ item['image_src'] }}" alt="{{ item['name'] }}" loading="eager">{% else %}<div class="empty">Rasm mavjud emas</div>{% endif %}</div>
+<div class="info"><div class="category">{{ item['category'] or 'Boshqa' }}</div><h2 class="name">{{ item['name'] }}</h2><div class="price">{{ '{:,.0f}'.format(item['price'] or 0) }} so‘m</div>{% if item['weight'] %}<div class="weight">⚖️ {{ item['weight'] }}</div>{% endif %}{% if item['description'] %}<div class="desc">{{ item['description'] }}</div>{% endif %}{% if order_action_url %}<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="qty-{{ loop.index0 }}" type="number" min="0.01" step="any" value="1" style="width:100px;padding:10px;border:1px solid #d5dce5;border-radius:10px"><button type="button" class="nav" onclick='addCatalogBasket({{ item["order_product_name"]|tojson }},document.getElementById("qty-{{ loop.index0 }}").value)'>🛒 Savatchaga qo‘shish</button></div>{% endif %}</div>
 </article>
 {% endfor %}
 </section>
@@ -5019,9 +5220,26 @@ AGENT_CATALOG_TEMPLATE = """
 {% else %}<div class="stage empty">Katalogga hozircha mahsulot joylanmagan.</div>{% endif %}
 </main>
 <script>
+const catalogBasket = {};
+function addCatalogBasket(name, rawQty) {
+  const qty = Number(rawQty);
+  if (!Number.isFinite(qty) || qty <= 0) { alert('Miqdorni to‘g‘ri kiriting'); return; }
+  catalogBasket[name] = (catalogBasket[name] || 0) + qty;
+  const hidden = document.getElementById('catalogHiddenInputs');
+  if (!hidden) return;
+  hidden.replaceChildren();
+  Object.entries(catalogBasket).forEach(([n,q]) => {
+    const nameInput=document.createElement('input'); nameInput.type='hidden'; nameInput.name='product_name'; nameInput.value=n;
+    const qtyInput=document.createElement('input'); qtyInput.type='hidden'; qtyInput.name='qty'; qtyInput.value=String(q);
+    hidden.append(nameInput,qtyInput);
+  });
+  const count = Object.keys(catalogBasket).length;
+  document.getElementById('catalogSubmit').disabled = count === 0;
+  document.getElementById('catalogBasket').textContent = '🛒 Savatcha: '+count+' xil mahsulot, jami '+Object.values(catalogBasket).reduce((a,b)=>a+b,0)+' dona/kg';
+}
 (function(){const slides=[...document.querySelectorAll('.slide')];if(!slides.length)return;let index=0;const counter=document.getElementById('counter'),label=document.getElementById('currentLabel'),dots=[...document.querySelectorAll('.dot')],prev=document.getElementById('prev'),next=document.getElementById('next');
 function show(n){index=(n+slides.length)%slides.length;slides.forEach((s,i)=>s.classList.toggle('active',i===index));dots.forEach((d,i)=>d.classList.toggle('active',i===index));counter.textContent=(index+1)+' / '+slides.length;label.textContent=(index+1)+' / '+slides.length;prev.disabled=slides.length<2;next.disabled=slides.length<2;}
-prev.addEventListener('click',()=>show(index-1));next.addEventListener('click',()=>show(index+1));dots.forEach(d=>d.addEventListener('click',()=>show(Number(d.dataset.go))));let x0=null;document.querySelector('.stage').addEventListener('touchstart',e=>{x0=e.changedTouches[0].clientX},{passive:true});document.querySelector('.stage').addEventListener('touchend',e=>{if(x0===null)return;let dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>45)show(index+(dx<0?1:-1));x0=null},{passive:true});document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(index+1);if(e.key==='ArrowLeft')show(index-1)});show(0);})();
+prev.addEventListener('click',()=>show(index-1));next.addEventListener('click',()=>show(index+1));dots.forEach(d=>d.addEventListener('click',()=>show(Number(d.dataset.go))));let x0=null;document.querySelector('.catalog-stage').addEventListener('touchstart',e=>{x0=e.changedTouches[0].clientX},{passive:true});document.querySelector('.catalog-stage').addEventListener('touchend',e=>{if(x0===null)return;let dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>45)show(index+(dx<0?1:-1));x0=null},{passive:true});document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(index+1);if(e.key==='ArrowLeft')show(index-1)});show(0);})();
 </script></body></html>
 """
 
@@ -5035,11 +5253,20 @@ def agent_catalog_webapp(tg_id):
     if not user or not any(r in (user['role'] or '').casefold() for r in ('agent', 'admin')):
         conn.close()
         return 'Bu katalog faqat agentlar uchun.', 403
-    rows = conn.execute('SELECT id,name,category,price,weight,description,image_filename FROM catalog_items WHERE active=1 ORDER BY id DESC').fetchall()
-    conn.close()
+    rows = conn.execute('SELECT id,name,category,price,weight,description,image_filename,sort_order,product_id FROM catalog_items WHERE active=1 ORDER BY (SELECT sort_order FROM catalog_categories WHERE name=catalog_items.category), COALESCE(sort_order,id), id').fetchall()
+    shops=[]
+    order_action_url=None
+    if 'agent' in (user['role'] or '').casefold() and 'admin' not in (user['role'] or '').casefold():
+        if user['territory']:
+            shops=conn.execute("SELECT id,name,region FROM shops WHERE territory=? OR territory='' ORDER BY name",(user['territory'],)).fetchall()
+        else:
+            shops=conn.execute("SELECT id,name,region FROM shops ORDER BY name").fetchall()
+        order_action_url=url_for('agent_webapp',tg_id=tg_id,ts=request.args.get('ts'),sig=request.args.get('sig'))
     items=[]
     for row in rows:
         item=dict(row)
+        linked=conn.execute('SELECT name FROM products WHERE id=?',(item.get('product_id'),)).fetchone() if item.get('product_id') else None
+        item['order_product_name']=linked['name'] if linked else item['name']
         image_value=item.get('image_filename') or ''
         if image_value.startswith(('http://','https://')):
             item['image_src']=image_value
@@ -5051,7 +5278,8 @@ def agent_catalog_webapp(tg_id):
         if not item.get('weight'):
             item['weight']=''
         items.append(item)
-    return render_template_string(AGENT_CATALOG_TEMPLATE, items=items, agent_name=user['name'])
+    conn.close()
+    return render_template_string(AGENT_CATALOG_TEMPLATE, items=items, agent_name=user['name'], order_action_url=order_action_url, shops=shops)
 
 
 
@@ -5062,6 +5290,8 @@ def catalog_add():
     description = (request.form.get('description') or '').strip()
     weight = (request.form.get('weight') or '').strip()
     price = safe_number(request.form.get('price'), -1)
+    sort_order = int(safe_number(request.form.get('sort_order'), 0, minimum=0))
+    product_id = int(safe_number(request.form.get('product_id'), 0, minimum=0)) or None
     image = request.files.get('image')
 
     if (
@@ -5079,10 +5309,15 @@ def catalog_add():
 
         conn = get_db_connection()
         ensure_catalog_weight_column(conn)
+        if sort_order <= 0:
+            sort_order = int(conn.execute(
+                'SELECT COALESCE(MAX(sort_order),0)+1 FROM catalog_items WHERE category=?',
+                (category,)
+            ).fetchone()[0] or 1)
         conn.execute(
             '''INSERT INTO catalog_items
-            (name, category, price, weight, description, image_filename, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?)''',
+            (name, category, price, weight, description, image_filename, active, created_at, sort_order, product_id)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)''',
             (
                 name,
                 category,
@@ -5090,10 +5325,12 @@ def catalog_add():
                 weight,
                 description,
                 image_url,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                sort_order or 999999,
+                product_id
             )
         )
-
+        conn.execute("INSERT OR IGNORE INTO catalog_categories(name, sort_order) VALUES (?, (SELECT COALESCE(MAX(sort_order),0)+1 FROM catalog_categories))", (category,))
         log_audit(
             conn,
             'Katalogga mahsulot qo‘shildi',
@@ -5103,7 +5340,7 @@ def catalog_add():
         )
 
         conn.commit()
-        return redirect(url_for('index'))
+        return redirect(url_for('index')+'#tab-catalog')
 
     except Exception:
         if conn is not None:
@@ -5140,6 +5377,137 @@ def catalog_delete(item_id):
       except OSError:
         pass
   return redirect(url_for('index'))
+
+
+@app.route('/catalog', methods=['GET'])
+def public_catalog():
+    """Do‘konchilar va guruh a’zolari uchun ochiq katalog havolasi."""
+    conn = get_db_connection()
+    ensure_catalog_weight_column(conn)
+    rows = conn.execute("""SELECT id,name,category,price,weight,description,image_filename,sort_order,product_id
+        FROM catalog_items WHERE active=1
+        ORDER BY (SELECT sort_order FROM catalog_categories WHERE name=catalog_items.category),
+                 COALESCE(sort_order,id), id""").fetchall()
+    conn.close()
+    items=[]
+    for row in rows:
+        item=dict(row)
+        value=item.get('image_filename') or ''
+        if value.startswith(('http://','https://')):
+            item['image_src']=value
+        elif value:
+            item['image_src']=url_for('catalog_image', filename=os.path.basename(value))
+        else:
+            item['image_src']=''
+        items.append(item)
+    return render_template_string(AGENT_CATALOG_TEMPLATE, items=items, agent_name='Do‘konchilar uchun', order_action_url=None, shops=[])
+
+@app.route('/catalog_update/<int:item_id>', methods=['POST'])
+def catalog_update(item_id):
+    name=(request.form.get('name') or '').strip()
+    category=(request.form.get('category') or 'Boshqa').strip()
+    description=(request.form.get('description') or '').strip()
+    weight=(request.form.get('weight') or '').strip()
+    price=safe_number(request.form.get('price'), -1)
+    sort_order=int(safe_number(request.form.get('sort_order'), 999999, minimum=0))
+    product_id=int(safe_number(request.form.get('product_id'),0,minimum=0)) or None
+    image=request.files.get('image')
+    if not name or not category or price < 0:
+        return 'Mahsulot nomi, kategoriya va narxni to‘g‘ri kiriting.', 400
+    conn=get_db_connection()
+    row=conn.execute('SELECT image_filename FROM catalog_items WHERE id=?',(item_id,)).fetchone()
+    if not row:
+        conn.close()
+        return 'Katalog mahsuloti topilmadi.',404
+    if sort_order <= 0:
+        sort_order=int(conn.execute('SELECT COALESCE(MAX(sort_order),0)+1 FROM catalog_items WHERE category=? AND id<>?',(category,item_id)).fetchone()[0] or item_id)
+    image_url=row['image_filename'] or ''
+    try:
+        if image and image.filename:
+            if not allowed_catalog_file(image.filename):
+                conn.close()
+                return 'Faqat JPG, JPEG, PNG yoki WEBP rasm mumkin.',400
+            image_url=imagekitga_yuklash(image)
+        conn.execute("""UPDATE catalog_items SET name=?,category=?,price=?,weight=?,description=?,
+            image_filename=?,sort_order=?,product_id=? WHERE id=?""",
+            (name,category,price,weight,description,image_url,sort_order or item_id,product_id,item_id))
+        conn.execute("INSERT OR IGNORE INTO catalog_categories(name,sort_order) VALUES (?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM catalog_categories))",(category,))
+        log_audit(conn,'Katalog mahsuloti tahrirlandi','catalog',item_id,
+                  f'nomi={name}; kategoriya={category}; narx={price}; tartib={sort_order}')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        app.logger.exception('Katalog mahsulotini tahrirlashda xato')
+        conn.close()
+        return 'Katalogni saqlashda xatolik. Render loglarini tekshiring.',500
+    conn.close()
+    return redirect(url_for('index')+'#tab-catalog')
+
+@app.route('/catalog_move/<int:item_id>', methods=['POST'])
+def catalog_move(item_id):
+    direction=request.form.get('direction','')
+    conn=get_db_connection()
+    item=conn.execute('SELECT id,category,COALESCE(sort_order,id) AS pos FROM catalog_items WHERE id=?',(item_id,)).fetchone()
+    if not item:
+        conn.close()
+        return 'Mahsulot topilmadi.',404
+    op='<' if direction=='up' else '>' if direction=='down' else None
+    if not op:
+        conn.close()
+        return 'Noto‘g‘ri yo‘nalish.',400
+    neighbor=conn.execute(f"""SELECT id,COALESCE(sort_order,id) AS pos FROM catalog_items
+        WHERE category=? AND COALESCE(sort_order,id) {op} ?
+        ORDER BY COALESCE(sort_order,id) {'DESC' if direction=='up' else 'ASC'},id
+        LIMIT 1""",(item['category'],item['pos'])).fetchone()
+    if neighbor:
+        conn.execute('UPDATE catalog_items SET sort_order=? WHERE id=?',(neighbor['pos'],item_id))
+        conn.execute('UPDATE catalog_items SET sort_order=? WHERE id=?',(item['pos'],neighbor['id']))
+        conn.commit()
+    conn.close()
+    return redirect(url_for('index')+'#tab-catalog')
+
+@app.route('/catalog_category_move', methods=['POST'])
+def catalog_category_move():
+    name=(request.form.get('category') or '').strip()
+    direction=request.form.get('direction','')
+    if direction not in ('up','down') or not name:
+        return 'Noto‘g‘ri kategoriya yoki yo‘nalish.',400
+    conn=get_db_connection()
+    item=conn.execute('SELECT id,sort_order FROM catalog_categories WHERE name=?',(name,)).fetchone()
+    if item:
+        op='<' if direction=='up' else '>'
+        neighbor=conn.execute(f"SELECT id,sort_order FROM catalog_categories WHERE sort_order {op} ? ORDER BY sort_order {'DESC' if direction=='up' else 'ASC'} LIMIT 1",(item['sort_order'],)).fetchone()
+        if neighbor:
+            conn.execute('UPDATE catalog_categories SET sort_order=? WHERE id=?',(neighbor['sort_order'],item['id']))
+            conn.execute('UPDATE catalog_categories SET sort_order=? WHERE id=?',(item['sort_order'],neighbor['id']))
+            conn.commit()
+    conn.close()
+    return redirect(url_for('index')+'#tab-catalog')
+
+@app.route('/catalog_publish_group', methods=['POST'])
+def catalog_publish_group():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    public_url=f'{WEB_BASE_URL}/catalog'
+    try:
+        bot.send_message(CATALOG_GROUP_ID,
+            '🖼 <b>XOJI AKA — MAHSULOTLAR KATALOGI</b>\\n\\n'
+            'Do‘konchilar mahsulotlar, rasmlar, og‘irlik va narxlarni shu havola orqali ko‘rishlari mumkin:\\n'
+            f'{public_url}',parse_mode='HTML',disable_web_page_preview=False)
+    except Exception:
+        app.logger.exception('Katalog havolasini Telegram guruhiga yuborishda xato')
+        return 'Guruhga yuborib bo‘lmadi. Bot guruhda bo‘lishi va xabar yuborish huquqiga ega ekanini, CATALOG_GROUP_ID sozlamasini tekshiring.',500
+    return redirect(url_for('index')+'#tab-catalog')
+
+@bot.message_handler(commands=['catalog_link'])
+def send_public_catalog_link(message):
+    if not is_admin_tg(message.from_user.id):
+        return
+    public_url=f'{WEB_BASE_URL}/catalog'
+    bot.send_message(message.chat.id,
+        '🖼 <b>XOJI AKA — OCHIQ KATALOG</b>\\n'
+        'Do‘konchilar kuzatishi uchun havola:\\n'+public_url,
+        parse_mode='HTML',disable_web_page_preview=False)
 
 
 @app.route('/add_order', methods=['POST'])
