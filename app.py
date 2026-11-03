@@ -250,7 +250,8 @@ def make_staff_web_url(tg_id):
     _c = get_db_connection()
     _u = _c.execute('SELECT role FROM users WHERE tg_id = ?', (int(tg_id),)).fetchone()
     _c.close()
-    _role = (_u['role'] or '') if _u else ''
+    # Rol katta-kichik harf yoki ortiqcha bo'shliqlar bilan yozilgan bo'lsa ham aniqlansin.
+    _role = ((_u['role'] or '').strip().casefold()) if _u else ''
   except Exception:
     _role = ''
   _path = 'agent_app' if ('agent' in _role and 'admin' not in _role) else 'staff_app'
@@ -4705,9 +4706,21 @@ def audit_web_post(response):
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['login', 'static', 'agent_webapp', 'staff_webapp', 'agent_catalog_webapp', 'public_catalog', 'catalog_image', 'healthz']
-    if request.endpoint not in allowed_routes and not session.get('logged_in'):
+    # Telegram Mini App sahifalari adminning brauzer sessiyasiga bog'liq emas:
+    # har bir route ichida tg_id + 15 daqiqalik HMAC imzosi alohida tekshiriladi.
+    allowed_routes = {
+        'login', 'static', 'agent_webapp', 'staff_webapp',
+        'agent_catalog_webapp', 'public_catalog', 'catalog_image', 'healthz'
+    }
+    mini_app_path = request.path.startswith((
+        '/agent_app/', '/staff_app/', '/agent_catalog/'
+    ))
+    if request.endpoint in allowed_routes or mini_app_path:
+        return None
+    # Oddiy web boshqaruv paneli (/) ataylab admin login bilan himoyalangan.
+    if not session.get('logged_in'):
         return redirect(url_for('login'))
+    return None
 
 @app.route('/', methods=['GET'], endpoint='index')
 def operator_dashboard():
@@ -5259,7 +5272,7 @@ def agent_catalog_webapp(tg_id):
         return 'Katalog havolasi eskirgan. Telegram botdan katalogni qayta oching.', 403
     conn = get_db_connection()
     ensure_catalog_weight_column(conn)
-    user = conn.execute('SELECT name, role FROM users WHERE tg_id=?', (tg_id,)).fetchone()
+    user = conn.execute('SELECT name, role, territory FROM users WHERE tg_id=?', (tg_id,)).fetchone()
     if not user or not any(r in (user['role'] or '').casefold() for r in ('agent', 'admin')):
         conn.close()
         return 'Bu katalog faqat agentlar uchun.', 403
