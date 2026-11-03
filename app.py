@@ -60,7 +60,7 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Bigbang0231.').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 CATALOG_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'catalog')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -485,6 +485,7 @@ def init_web_db():
       ('', 'Toshpoʻlat aka', '', 'Termiz shahar', 'Uchrashuv yoni', 'Dushanba', 'Port va Senter'),
       ('', 'Abdulfayz bekat', '', 'Termiz shahar', '', 'Dushanba', 'Port va Senter'),
       ('', 'Dilorom', '', 'Termiz shahar', 'Tutzor', 'Dushanba', 'Port va Senter'),
+      ('', '9-bekat', '', 'Termiz shahar', 'port', 'Dushanba', 'Port va Senter'),
       ('', 'Joʻrabek aka', '', 'Termiz shahar', 'Anorcha tagi', 'Dushanba', 'Senter'),
       ('', 'Bahor Market', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL'),
       ('', 'Baraka Market', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL'),
@@ -500,6 +501,8 @@ def init_web_db():
       ('', 'Salmon nondog bekat', '', 'Termiz shahar', 'viloyat sudi orqasi', 'Dushanba', 'Port va Senter'),
       ('', 'Aznaf market', '', 'Termiz shahar', 'avtosalon roparasi', 'Dushanba', 'Port va Senter'),
       ('', 'Sher namuna', '', 'Termiz tuman', 'Senter kamaz', 'Dushanba', 'PSKUL'),
+      ('', 'limon 1-bekat', '', 'Termiz tuman', 'Limon', 'Dushanba', 'PSKUL'),
+      ('', 'limon oxirgi dokon', '', 'Termiz tuman', 'Limon', 'Dushanba', 'PSKUL'),
 
       # --- Seshanba ---
       ('', 'Vohas', '', 'Termiz shahar', 'Vohas', 'Seshanba', 'Hokimiyat va 5-daha'),
@@ -541,6 +544,8 @@ def init_web_db():
       ('', 'Yodgorov Abduhakim', '', 'Termiz shahar', 'Yashil dunyo ichi', 'Chorshanba', 'Movaro va Yashil Dunyo'),
       ('', 'Malikov Eldor', '', 'Termiz shahar', 'Movaro', 'Chorshanba', 'Movaro va Yashil Dunyo'),
       ('', 'Alisherbek Xoltora', '', 'Termiz shahar', 'Tisuga yetmay', 'Chorshanba', 'Movaro va Yashil Dunyo'),
+      ('', 'Sevimli market', '', 'Termiz shahar', 'Yashil dunyo', 'Chorshanba', 'Movaro va Yashil Dunyo'),
+      ('', 'Botir game club', '', 'Termiz shahar', 'Yashil dunyo', 'Chorshanba', 'Movaro va Yashil Dunyo'),
 
       # --- Payshanba ---
       ('', 'Pul hokim', '', 'Termiz shahar', 'Adliya yoʻli', 'Payshanba', '16-daha'),
@@ -575,6 +580,10 @@ def init_web_db():
       ('', 'Oila nur market', '', 'Termiz shahar', 'office market orqasi', 'Juma', 'Yubileyniy'),
       ('', 'Hojanova Rano', '', 'Termiz shahar', 'Savhozniy', 'Juma', 'Yubileyniy'),
       ('', 'Toyirova Nigora', '', 'Termiz shahar', 'Milliy gvardiya yoni', 'Juma', 'Yubileyniy'),
+      ('', 'Abdujalilov Rajabali', '', 'Termiz shahar', 'Shashlik city yoni', 'Juma', 'Yubileyniy'),
+      ('', '24/7 market', '', 'Termiz shahar', 'Best restorani', 'Juma', 'Yubileyniy'),
+      ('', 'Allaqulova Nargiza', '', 'Termiz shahar', 'Best restorani', 'Juma', 'Yubileyniy'),
+      ('', 'peshexod market', '', 'Termiz shahar', 'Best restorani', 'Juma', 'Yubileyniy'),
 
       # --- Shanba ---
       ('', 'Aka-Uka Market', '', 'Termiz shahar', 'Masjid yoni', 'Shanba', 'Avtokvokzal'),
