@@ -649,12 +649,12 @@ def init_web_db():
       ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
-      ('Mazzarello/kg', 'Goʻsht va Sir mahsulotlari', 30, 50000.0, 59500.0, 59500.0, 3),
-      ('Sir arzon to'rtburchak/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
-      ('Sir klassik kolbasniy/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
+      ('Mazzarello/kg', 'Goʻsht va Sir mahsulotlari', 30, 50000.0, 60000.0, 60000.0, 3),
+      ('Sir arzon toʻrtburchak/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 29000.0, 29000.0, 3),
+      ('Sir klassik kolbasniy/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 29000.0, 29000.0, 3),
       ('Indeyka original', 'Goʻsht va Sir mahsulotlari', 90, 36500.0, 44500.0, 44500.0, 3),
       ('Indeyka delikates', 'Goʻsht va Sir mahsulotlari', 90, 36500.0, 44500.0, 44500.0, 3),
-      ('Sir Samarqand/kg', 'Goʻsht va Sir mahsulotlari', 10, 50000.0, 59500.0, 59500.0, 3),
+      ('Sir Samarqand/kg', 'Goʻsht va Sir mahsulotlari', 10, 50000.0, 60000.0, 60000.0, 3),
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
     cursor.execute(
