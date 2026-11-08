@@ -10,6 +10,7 @@ import hashlib
 import shutil
 import uuid
 import re
+from html import escape as html_escape
 from imagekitio import ImageKit
 from werkzeug.utils import secure_filename
 from urllib.parse import urlencode
@@ -34,7 +35,7 @@ from telebot import types
 # --- SOZLAMALAR ---
 # Xavfsizlik: bot tokeni va maxfiy kalitlarni kodga yozmang.
 # Windows PowerShell: $env:BOT_TOKEN="BotFather bergan yangi token"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573337094:AAFMCKiQxhHw2SiwXB3Sq9ytLZ4vxfxPYyI").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6851851908"))
 SEX_GROUP_ID = int(os.environ.get("SEX_GROUP_ID", "-1003936599812"))
 CATALOG_GROUP_ID = os.environ.get('CATALOG_GROUP_ID') or SEX_GROUP_ID
@@ -45,7 +46,10 @@ bot = telebot.TeleBot(BOT_TOKEN or "000000:PLACEHOLDER_TOKEN")
 app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_NAME = os.environ.get('DB_NAME', os.path.join(BASE_DIR, 'xoji_aka_factory.db'))  # Standart holatda aynan shu fayl yonidagi eski baza ishlatiladi
+# Render productionida FLASK_SECRET_KEY doimiy Environment Variable bo‘lishi shart.
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(32)
+if not os.environ.get('FLASK_SECRET_KEY'):
+  app.logger.warning('FLASK_SECRET_KEY sozlanmagan: restartdan keyin sessiyalar bekor bo‘lishi mumkin.')
 # Xatolar jurnali: fayl hajmi 2 MB dan oshsa aylantiriladi.
 LOG_FILE = os.path.join(BASE_DIR, 'xoji_aka_errors.log')
 _file_logger = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5, encoding='utf-8')
@@ -60,7 +64,7 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Bigbang0231.').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 CATALOG_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'catalog')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -3127,7 +3131,7 @@ def agent_webapp(tg_id):
                 f'👤 <b>Agent:</b> {agent_name}\n'
                 f'💬 <b>Izoh:</b> {comment}\n'
                 f'💰 <b>Jami summa:</b> {total_sum:,.0f} so\'m\n\n'
-                f'<b>Mahsulotlar:</b>\n{items_text}'
+                f'<b>Mahsulotlar:</b>\n{html_escape(items_text)}'
             )
             bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
         except Exception as e:
@@ -3437,6 +3441,10 @@ def finish_order_with_comment(message):
         ' ?',
         (p_name,),
     ).fetchone()
+    if not prod:
+      conn.rollback(); conn.close()
+      bot.send_message(message.chat.id, f'❌ Mahsulot topilmadi: {p_name}. Savatni yangilang va qayta urinib ko‘ring.')
+      return
     optom_p = prod['optom_price'] if prod['optom_price'] is not None else 0
     chakana_p = (
         prod['chakana_price'] if prod['chakana_price'] is not None else 0
@@ -3481,7 +3489,10 @@ def finish_order_with_comment(message):
       (shop_name, agent_name, total_sum, items_text, bugun, p_type, comment, cost_total),
   )
   order_id = cursor.lastrowid
-  ordered_shop = conn.execute('SELECT id FROM shops WHERE name=?', (shop_name,)).fetchone()
+  ordered_shop = conn.execute('SELECT id, phone, region, landmark FROM shops WHERE name=?', (shop_name,)).fetchone()
+  shop_phone = (ordered_shop['phone'] or '').strip() if ordered_shop else ''
+  shop_region = (ordered_shop['region'] or '').strip() if ordered_shop else ''
+  shop_landmark = (ordered_shop['landmark'] or '').strip() if ordered_shop else ''
   if ordered_shop:
     visit_stamp = datetime.now().strftime('%Y-%m-%d %H:%M')
     visit_next = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
@@ -3512,8 +3523,11 @@ def finish_order_with_comment(message):
     )
     bot.send_message(
         ADMIN_ID,
-        f"🔔 YANGI BUYURTMA (#{order_id}):\n\nDo'kon: {data['shop_name']}\nSumma:"
-        f" {total_sum:,.0f} so'm\nIzoh: {comment}",
+        f"🔔 YANGI BUYURTMA (#{order_id}):\n\nDo'kon: {data['shop_name']}\n"
+        f"📍 Orientir: {shop_landmark or 'Kiritilmagan'}\n"
+        f"🗺 Hudud: {shop_region or 'Kiritilmagan'}\n"
+        f"☎️ Telefon: {shop_phone or 'Kiritilmagan'}\n"
+        f"Summa: {total_sum:,.0f} so'm\nIzoh: {comment}",
     )
 
     with open(admin_excel_file, 'rb') as doc:
@@ -3521,9 +3535,12 @@ def finish_order_with_comment(message):
 
     group_text = (
         f'📝 <b>YANGI BUYURTMA (#{order_id})</b>\n'
-        f"🏪 <b>Do'kon:</b> {data['shop_name']}\n"
-        f'👤 <b>Agent:</b> {agent_name}\n'
-        f'💬 <b>Izoh:</b> {comment}\n'
+        f"🏪 <b>Do'kon:</b> {html_escape(str(data['shop_name']))}\n"
+        f'📍 <b>Orientir:</b> {html_escape(shop_landmark or "Kiritilmagan")}\n'
+        f'🗺 <b>Hudud:</b> {html_escape(shop_region or "Kiritilmagan")}\n'
+        f'☎️ <b>Telefon:</b> {html_escape(shop_phone or "Kiritilmagan")}\n'
+        f'👤 <b>Agent:</b> {html_escape(str(agent_name))}\n'
+        f'💬 <b>Izoh:</b> {html_escape(str(comment))}\n'
         f'💰 <b>Jami summa:</b> {total_sum:,.0f} so\'m\n\n'
         f'<b>Mahsulotlar:</b>\n{items_text}'
     )
@@ -5580,7 +5597,11 @@ def web_add_order():
 
   conn = get_db_connection()
   ensure_business_plus_schema(conn)
+  if not shop_name or not conn.execute('SELECT 1 FROM shops WHERE name=?', (shop_name,)).fetchone():
+    conn.close()
+    return 'Tanlangan do‘kon topilmadi. Buyurtmani qayta ochib, do‘konni tanlang.', 400
   total_sum = 0
+  found_items = 0
   cost_total = 0
   items_text = ''
   excel_cart_items = []
@@ -5594,7 +5615,11 @@ def web_add_order():
       continue
 
     prod = conn.execute('SELECT optom_price, cost_price, stock, id FROM products WHERE name = ?', (p_name,)).fetchone()
+    if not prod:
+      conn.rollback(); conn.close()
+      return f'Mahsulot topilmadi: {p_name}', 400
     if prod:
+      found_items += 1
       price = prod['optom_price'] if prod['optom_price'] is not None else 0
       stock_p = prod['stock'] if prod['stock'] is not None else 0
       if stock_p < qty:
@@ -5609,8 +5634,14 @@ def web_add_order():
       record_stock_movement(conn, p_name, -qty, 'Buyurtma', 'Web panel')
       excel_cart_items.append({'name': p_name, 'qty': qty, 'price': price})
 
-  final_sum = max(0, total_sum - discount)
-  shop_credit = conn.execute('SELECT debt, credit_limit FROM shops WHERE name=?', (shop_name,)).fetchone() if shop_name else None
+  if found_items == 0:
+    conn.rollback(); conn.close()
+    return 'Buyurtmaga kamida bitta mahsulot va musbat miqdor kiriting.', 400
+  if discount > total_sum:
+    conn.rollback(); conn.close()
+    return f'Chegirma jami summadan oshmasligi kerak. Jami: {total_sum:,.0f} so‘m.', 400
+  final_sum = total_sum - discount
+  shop_credit = conn.execute('SELECT debt, credit_limit FROM shops WHERE name=?', (shop_name,)).fetchone()
   if shop_credit and safe_number(shop_credit['credit_limit']) > 0 and shop_credit_used(conn, shop_name) + final_sum > safe_number(shop_credit['credit_limit']):
     limit_value = safe_number(shop_credit['credit_limit'])
     debt_value = shop_credit_used(conn, shop_name)
@@ -5624,17 +5655,24 @@ def web_add_order():
       (shop_name, agent_name, final_sum, items_text, bugun, 'optom', discount, comment, cost_total),
   )
   order_id = cursor.lastrowid
+  shop_info = conn.execute('SELECT phone, region, landmark FROM shops WHERE name=?', (shop_name,)).fetchone()
+  shop_phone = (shop_info['phone'] or '').strip() if shop_info else ''
+  shop_region = (shop_info['region'] or '').strip() if shop_info else ''
+  shop_landmark = (shop_info['landmark'] or '').strip() if shop_info else ''
   conn.commit()
   conn.close()
 
   try:
     group_text = (
         f'📝 <b>YANGI WEB BUYURTMA (#{order_id})</b>\n'
-        f"🏪 <b>Do'kon:</b> {shop_name}\n"
-        f'👤 <b>Operator:</b> {agent_name}\n'
-        f'💬 <b>Izoh:</b> {comment}\n'
+        f"🏪 <b>Do'kon:</b> {html_escape(str(shop_name))}\n"
+        f'📍 <b>Orientir:</b> {html_escape(shop_landmark or "Kiritilmagan")}\n'
+        f'🗺 <b>Hudud:</b> {html_escape(shop_region or "Kiritilmagan")}\n'
+        f'☎️ <b>Telefon:</b> {html_escape(shop_phone or "Kiritilmagan")}\n'
+        f'👤 <b>Operator:</b> {html_escape(str(agent_name))}\n'
+        f'💬 <b>Izoh:</b> {html_escape(str(comment))}\n'
         f'💰 <b>Jami summa:</b> {final_sum:,.0f} so\'m\n\n'
-        f'<b>Mahsulotlar:</b>\n{items_text}'
+        f'<b>Mahsulotlar:</b>\n{html_escape(items_text)}'
     )
     bot.send_message(SEX_GROUP_ID, group_text, parse_mode='HTML')
   except Exception as e:
@@ -5665,7 +5703,10 @@ def update_status(order_id):
       shop_res = conn.execute("SELECT debt FROM shops WHERE name = ?", (shop_name,)).fetchone()
       if shop_res:
           curr_debt = safe_number(shop_res['debt'])
-          delta = safe_number(ord_data['total_sum']) * (1 if new_delivered else -1)
+          paid_row = conn.execute('SELECT COALESCE(SUM(amount),0) AS paid FROM order_payments WHERE order_id=?', (order_id,)).fetchone()
+          unpaid_amount = max(0, safe_number(ord_data['total_sum']) - safe_number(paid_row['paid'] if paid_row else 0))
+          # Buyurtma yetkazilganda faqat qolgan qarz qo‘shiladi; holat qaytarilsa faqat shu qismi ayriladi.
+          delta = unpaid_amount * (1 if new_delivered else -1)
           conn.execute("UPDATE shops SET debt = ? WHERE name = ?", (max(0, curr_debt + delta), shop_name))
   conn.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
   log_audit(conn, 'Buyurtma holati o‘zgartirildi', 'order', order_id, f'{ord_data["status"] if ord_data else "?"} -> {new_status}')
@@ -6509,7 +6550,9 @@ if __name__ == '__main__':
     threading.Thread(target=backup_scheduler, daemon=True).start()
 
     if not ADMIN_PASSWORD:
-        print("DIQQAT: ADMIN_PASSWORD sozlanmagan. Admin kirishi uchun PowerShell’da $env:ADMIN_PASSWORD='kuchli_parol' deb belgilang.")
+        print("DIQQAT: ADMIN_PASSWORD Render Environment’da sozlanmagan. Admin login yopiq qoladi.")
+    if not os.environ.get('FLASK_SECRET_KEY'):
+        print('DIQQAT: FLASK_SECRET_KEY Render Environment’da sozlanmagan; doimiy kalit kiriting.')
 
     if BOT_TOKEN and ':' in BOT_TOKEN and 'PLACEHOLDER' not in BOT_TOKEN:
         bot_thread = threading.Thread(target=run_bot, daemon=True)
