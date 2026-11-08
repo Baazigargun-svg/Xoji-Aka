@@ -593,7 +593,7 @@ def init_web_db():
       ('', 'Boxo market', '', 'Termiz shahar', 'zilyonni yoʻli', 'Shanba', 'Avtokvokzal'),
       ('', 'Otabek zapchast M', '', 'Termiz shahar', 'zilyonni yoʻli', 'Shanba', 'Avtokvokzal'),
       ('', 'Maya market', '', 'Termiz shahar', 'Gostsatndart yoni', 'Shanba', 'Avtokvokzal'),
-      ('', 'Umida opa', '', 'Termiz shahar', 'Mashhura yoʻli', 'Shanba', 'Avtokvokzal'),
+      ('', 'Umida opa Turon', '', 'Termiz shahar', 'Mashhura yoʻli', 'Shanba', 'Avtokvokzal'),
       ('', 'Darband city', '', 'Termiz shahar', 'Vokzal yoni', 'Shanba', 'Avtokvokzal'),
       ('', 'Otajon market', '', 'Termiz shahar', 'Tisudan keyin', 'Shanba', 'Avtokvokzal'),
       ('', 'Barakali market', '', 'Termiz shahar', 'Tisu yoni', 'Shanba', 'Avtokvokzal'),
@@ -606,6 +606,9 @@ def init_web_db():
       ('', 'Crafers bekat', '', 'Termiz shahar', 'eski pioner roparasi', 'Shanba', 'Avtokvokzal'),
       ('Madiyeva Iroda', 'MAdiyeva I market', '', 'Termiz shahar', 'avtovokzal litsey', 'Shanba', 'Avtokvokzal'),
       ('', 'Yulduz bekat', '', 'Termiz shahar', 'shox bekat yoli', 'Shanba', 'Avtokvokzal'),
+      ('', 'Asl market', '', 'Termiz shahar', 'zelyonniy yoli', 'Shanba', 'Avtokvokzal'),
+      ('', 'Sevara xola', '', 'Termiz shahar', 'kia saloni orqasi', 'Shanba', 'Avtokvokzal'),
+      ('', 'Akbar aka alpomish', '', 'Termiz shahar', 'Alpomish stadioni yoni', 'Shanba', 'Avtokvokzal'),
   ]
   for s_firm, s_name, s_phone, s_region, s_landmark, s_visit_days, s_territory in initial_shops:
     cursor.execute(
@@ -638,7 +641,7 @@ def init_web_db():
       ('Mirinda 330gr/24шт', 'Yaxna ichimliklari', 408, 8800.0, 10000.0, 10000.0, 3),
       ('Snikers/001/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
       ('Snikers oq/041/3kg', 'Afif shirinliklari', 100, 100500.0, 117000.0, 117000.0, 3),
-      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 20, 100500.0, 120000.0, 120000.0, 3),
+      ('Mini Rulet/002/3kg', 'Afif shirinliklari', 20, 105000.0, 120000.0, 120000.0, 3),
       ('Yojik/003/2kg', 'Afif shirinliklari', 20, 67000.0, 84000.0, 84000.0, 3),
       ('Dessert/007/2kg', 'Afif shirinliklari', 20, 71000.0, 86000.0, 86000.0, 3),
       ('Pudra Palichka/013/2kg', 'Afif shirinliklari', 10, 49000.0, 60000.0, 60000.0, 3),
@@ -646,10 +649,11 @@ def init_web_db():
       ('Ovsyanka pista/025/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Ovsyanka magiz/026/3kg', 'Afif shirinliklari', 10, 73500.0, 92000.0, 92000.0, 3),
       ('Choko Ovsyanka/028/3kg', 'Afif shirinliklari', 10, 82500.0, 103000.0, 103000.0, 3),
-      ('Matsarello/kg', 'Goʻsht va Sir mahsulotlari', 30, 50000.0, 59500.0, 59500.0, 3),
-      ('Sir arzon 02/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
-      ('Sir klassik/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
-      ('Indeyka + goʻsht 250 gm', 'Goʻsht va Sir mahsulotlari', 212, 36500.0, 44500.0, 44500.0, 3),
+      ('Mazzarello/kg', 'Goʻsht va Sir mahsulotlari', 30, 50000.0, 59500.0, 59500.0, 3),
+      ('Sir arzon to'rtburchak/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
+      ('Sir klassik kolbasniy/kg', 'Goʻsht va Sir mahsulotlari', 31, 23000.0, 27900.0, 27900.0, 3),
+      ('Indeyka original', 'Goʻsht va Sir mahsulotlari', 90, 36500.0, 44500.0, 44500.0, 3),
+      ('Indeyka delikates', 'Goʻsht va Sir mahsulotlari', 90, 36500.0, 44500.0, 44500.0, 3),
       ('Sir Samarqand/kg', 'Goʻsht va Sir mahsulotlari', 10, 50000.0, 59500.0, 59500.0, 3),
   ]
   for p_name, p_cat, p_stock, p_cost, p_optom, p_chakana, p_percent in initial_products:
