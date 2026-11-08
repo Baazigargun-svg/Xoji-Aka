@@ -3814,9 +3814,15 @@ HTML_TEMPLATE = """
                         <div class="col-md-8">
                             <div class="card-glass p-4 mb-3">
                                 <h6 class="fw-bold mb-2"><i class="bi bi-printer me-1"></i>Tanlangan zakazlarni chop etish</h6>
-                                <form action="/print_nakladnoy" method="GET" target="_blank" class="d-flex gap-2 align-items-center">
-                                    <input type="text" id="selectedIdsInput" name="ids" class="form-control form-control-sm" placeholder="Tanlangan ID lar (Masalan: 1,2,3)" required readonly>
-                                    <button type="submit" class="btn btn-sm btn-dark text-nowrap">Chop etish</button>
+                                <form action="/print_nakladnoy" method="GET" target="_blank" class="d-flex gap-2 align-items-center flex-wrap">
+                                    <input type="text" id="selectedIdsInput" name="ids" class="form-control form-control-sm" placeholder="Tanlangan buyurtmalar" required readonly style="min-width:150px;flex:1">
+                                    <select name="kind" class="form-select form-select-sm" style="max-width:220px"><option value="shops">Do‘konlar bo‘yicha alohida</option><option value="warehouse">Zavsklad uchun yig‘indi</option></select>
+                                    <button type="submit" class="btn btn-sm btn-dark text-nowrap">Nakladnoy chop etish</button>
+                                </form>
+                                <form action="/bulk_order_payments" method="POST" id="bulkPaymentForm" class="d-flex gap-2 align-items-center mt-2 flex-wrap" onsubmit="return confirm('Tanlangan buyurtmalar bo‘yicha kiritilgan to‘lovlarni kassaga yozamizmi?')">
+                                    <input type="hidden" name="ids" id="paymentSelectedIds">
+                                    <span class="small text-muted">Yetkazilgan buyurtmalarga yuqoridagi summalarni yozing, keyin:</span>
+                                    <button type="submit" class="btn btn-sm btn-success text-nowrap"><i class="bi bi-cash-coin me-1"></i>Tanlangan to‘lovlarni kassaga kirim qilish</button>
                                 </form>
                             </div>
                             <div class="card-glass p-4">
@@ -3853,6 +3859,10 @@ HTML_TEMPLATE = """
                                                 <td><b>{{ o['shop_name'] }}</b><br><small class="text-muted">Agent: {{ o['agent_name'] }}</small></td>
                                                 <td>
                                                     <div class="fw-bold text-primary mb-1">Jami: {{ "{:,.0f}".format(o['total_sum']) }} so'm</div>
+                                                    {% if o['status'] == 'Yetkazildi' %}
+                                                    <div class="small text-success">Kirim: {{ "{:,.0f}".format(o['paid_amount']) }} | Qoldiq: {{ "{:,.0f}".format(o['remaining_amount']) }}</div>
+                                                    <input type="number" min="0" max="{{ o['remaining_amount'] }}" step="any" name="payment_{{ o['id'] }}" form="bulkPaymentForm" class="form-control form-control-sm mt-1 order-payment-input" data-order-id="{{ o['id'] }}" placeholder="Kassaga kirim summasi" style="max-width:190px">
+                                                    {% endif %}
                                                     <details>
                                                         <summary class="text-secondary small" style="cursor: pointer;">Tafsilotni ko'rish</summary>
                                                         <code style="font-size: 11px; white-space: pre-line;" class="text-dark d-block mt-1 bg-light p-1 rounded">{{ o['items_text'] }}</code>
@@ -4596,6 +4606,20 @@ function addEditModalRow(selectedProd = '', qtyVal = '1') {
             row.style.display = ((!statusFilter || status === statusFilter) && (!search || text.includes(search))) ? '' : 'none';
         });
     }
+    function updateSelectedIds() {
+        const ids = [...document.querySelectorAll('.order-checkbox:checked')].map(x => x.value);
+        const csv = ids.join(',');
+        const printInput = document.getElementById('selectedIdsInput');
+        const paymentInput = document.getElementById('paymentSelectedIds');
+        if (printInput) printInput.value = csv;
+        if (paymentInput) paymentInput.value = csv;
+    }
+    function toggleSelectAllOrders(master) {
+        document.querySelectorAll('.order-checkbox').forEach(x => {
+            if (x.closest('tr').style.display !== 'none') x.checked = master.checked;
+        });
+        updateSelectedIds();
+    }
     function filterShopDropdown() {
         let input = document.getElementById('orderShopSearchInput').value.toLowerCase();
         for (let option of document.getElementById('orderShopSelect').options) {
@@ -4747,6 +4771,9 @@ def operator_dashboard():
     o_dict = dict(o)
     history = conn.execute('SELECT status, changed_at FROM order_status_history WHERE order_id = ? ORDER BY id', (o['id'],)).fetchall()
     o_dict['history'] = [dict(h) for h in history]
+    paid_row = conn.execute('SELECT COALESCE(SUM(amount),0) AS paid FROM order_payments WHERE order_id=?', (o['id'],)).fetchone()
+    o_dict['paid_amount'] = safe_number(paid_row['paid'] if paid_row else 0)
+    o_dict['remaining_amount'] = max(0, safe_number(o['total_sum']) - o_dict['paid_amount'])
     formatted_orders.append(o_dict)
 
   daily_sum_res = conn.execute("SELECT SUM(total_sum) as s FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? AND status != 'Bekor'", (start_date, end_date)).fetchone()
@@ -5234,7 +5261,7 @@ AGENT_CATALOG_TEMPLATE = """
 {% for item in items %}
 <article class="slide {% if loop.first %}active{% endif %}" data-index="{{ loop.index0 }}">
 <div class="photo">{% if item['image_filename'] %}<img src="{{ item['image_src'] }}" alt="{{ item['name'] }}" loading="eager">{% else %}<div class="empty">Rasm mavjud emas</div>{% endif %}</div>
-<div class="info"><div class="category">{{ item['category'] or 'Boshqa' }}</div><h2 class="name">{{ item['name'] }}</h2><div class="price">{{ '{:,.0f}'.format(item['price'] or 0) }} so‘m</div>{% if item['weight'] %}<div class="weight">⚖️ {{ item['weight'] }}</div>{% endif %}{% if item['description'] %}<div class="desc">{{ item['description'] }}</div>{% endif %}{% if order_action_url %}<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="qty-{{ loop.index0 }}" type="number" min="0.01" step="any" value="1" style="width:100px;padding:10px;border:1px solid #d5dce5;border-radius:10px"><button type="button" class="nav" onclick='addCatalogBasket({{ item["order_product_name"]|tojson }},document.getElementById("qty-{{ loop.index0 }}").value)'>🛒 Savatchaga qo‘shish</button></div>{% endif %}</div>
+<div class="info"><div class="category">{{ item['category'] or 'Boshqa' }}</div><h2 class="name">{{ item['name'] }}</h2><div class="price">{{ '{:,.0f}'.format(item['price'] or 0) }} so‘m</div>{% if item['weight'] %}<div class="weight">⚖️ {{ item['weight'] }}</div>{% endif %}{% if item['description'] %}<div class="desc">{{ item['description'] }}</div>{% endif %}{% if order_action_url %}<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="qty-{{ loop.index0 }}" type="number" min="0.01" step="any" value="1" style="width:100px;padding:10px;border:1px solid #d5dce5;border-radius:10px"><button type="button" class="nav" onclick='addCatalogBasket({{ item["order_product_name"]|tojson }},document.getElementById("qty-{{ loop.index0 }}").value,this)'>🛒 Savatchaga qo‘shish</button></div>{% endif %}</div>
 </article>
 {% endfor %}
 </section>
@@ -5244,10 +5271,12 @@ AGENT_CATALOG_TEMPLATE = """
 </main>
 <script>
 const catalogBasket = {};
-function addCatalogBasket(name, rawQty) {
+function addCatalogBasket(name, rawQty, button) {
+  if (button && button.disabled) return;
   const qty = Number(rawQty);
   if (!Number.isFinite(qty) || qty <= 0) { alert('Miqdorni to‘g‘ri kiriting'); return; }
   catalogBasket[name] = (catalogBasket[name] || 0) + qty;
+  if (button) { const oldText=button.textContent; button.disabled=true; button.textContent='✓ Qo‘shildi'; setTimeout(()=>{button.disabled=false;button.textContent=oldText;},900); }
   const hidden = document.getElementById('catalogHiddenInputs');
   if (!hidden) return;
   hidden.replaceChildren();
@@ -5258,8 +5287,10 @@ function addCatalogBasket(name, rawQty) {
   });
   const count = Object.keys(catalogBasket).length;
   document.getElementById('catalogSubmit').disabled = count === 0;
-  document.getElementById('catalogBasket').textContent = '🛒 Savatcha: '+count+' xil mahsulot, jami '+Object.values(catalogBasket).reduce((a,b)=>a+b,0)+' dona/kg';
+  document.getElementById('catalogBasket').textContent = '✓ Savatchaga qo‘shildi! 🛒 '+count+' xil mahsulot, jami '+Object.values(catalogBasket).reduce((a,b)=>a+b,0)+' dona/kg';
 }
+const catalogOrderForm=document.getElementById('catalogOrderForm');
+if(catalogOrderForm){catalogOrderForm.addEventListener('submit',function(e){const btn=document.getElementById('catalogSubmit');if(btn.disabled){e.preventDefault();return;}btn.disabled=true;btn.textContent='⏳ Buyurtma yuborilmoqda...';});}
 (function(){const slides=[...document.querySelectorAll('.slide')];if(!slides.length)return;let index=0;const counter=document.getElementById('counter'),label=document.getElementById('currentLabel'),dots=[...document.querySelectorAll('.dot')],prev=document.getElementById('prev'),next=document.getElementById('next');
 function show(n){index=(n+slides.length)%slides.length;slides.forEach((s,i)=>s.classList.toggle('active',i===index));dots.forEach((d,i)=>d.classList.toggle('active',i===index));counter.textContent=(index+1)+' / '+slides.length;label.textContent=(index+1)+' / '+slides.length;prev.disabled=slides.length<2;next.disabled=slides.length<2;}
 prev.addEventListener('click',()=>show(index-1));next.addEventListener('click',()=>show(index+1));dots.forEach(d=>d.addEventListener('click',()=>show(Number(d.dataset.go))));let x0=null;document.querySelector('.catalog-stage').addEventListener('touchstart',e=>{x0=e.changedTouches[0].clientX},{passive:true});document.querySelector('.catalog-stage').addEventListener('touchend',e=>{if(x0===null)return;let dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>45)show(index+(dx<0?1:-1));x0=null},{passive:true});document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')show(index+1);if(e.key==='ArrowLeft')show(index-1)});show(0);})();
@@ -5640,6 +5671,55 @@ def update_status(order_id):
   return redirect(url_for('index'))
 
 
+@app.route('/bulk_order_payments', methods=['POST'])
+def bulk_order_payments():
+    raw_ids = request.form.get('ids', '')
+    ids = list(dict.fromkeys(int(x) for x in raw_ids.split(',') if x.strip().isdigit()))
+    if not ids:
+        return 'Avval buyurtmalarni belgilang.', 400
+    conn = get_db_connection()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    actor = current_actor()
+    processed = 0
+    total_cash = 0.0
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        for order_id in ids:
+            order = conn.execute('SELECT id,shop_name,total_sum,status FROM orders WHERE id=?', (order_id,)).fetchone()
+            if not order or order['status'] != 'Yetkazildi':
+                continue
+            amount = safe_number(request.form.get(f'payment_{order_id}'), 0)
+            if amount <= 0:
+                continue
+            already = conn.execute('SELECT COALESCE(SUM(amount),0) AS paid FROM order_payments WHERE order_id=?', (order_id,)).fetchone()
+            paid = safe_number(already['paid'] if already else 0)
+            remaining = max(0, safe_number(order['total_sum']) - paid)
+            if amount > remaining + 0.0001:
+                raise ValueError(f"#{order_id} buyurtma uchun ortiqcha summa kiritildi. Qolgan to‘lov: {remaining:,.0f} so‘m")
+            shop = conn.execute('SELECT debt FROM shops WHERE name=?', (order['shop_name'],)).fetchone()
+            if not shop:
+                raise ValueError(f"{order['shop_name']} do‘koni topilmadi")
+            current_debt = safe_number(shop['debt'])
+            conn.execute('UPDATE shops SET debt=? WHERE name=?', (max(0, current_debt-amount), order['shop_name']))
+            conn.execute('INSERT INTO order_payments(order_id,shop_name,amount,payment_date,actor,note) VALUES(?,?,?,?,?,?)',
+                         (order_id, order['shop_name'], amount, now, actor, 'Admin web panel — ommaviy kassaga kirim'))
+            conn.execute('INSERT INTO incomes(source,amount,date) VALUES(?,?,?)',
+                         (f"Buyurtma #{order_id} — {order['shop_name']} to‘lovi", amount, now))
+            log_audit(conn, 'Buyurtma to‘lovi kassaga kirim qilindi', 'order', order_id,
+                      f'do‘kon={order["shop_name"]}; summa={amount}; actor={actor}')
+            processed += 1
+            total_cash += amount
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        return f'Kirim bajarilmadi: {exc}', 400
+    conn.close()
+    if processed == 0:
+        return redirect(url_for('index'))
+    return redirect(url_for('index'))
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -5678,6 +5758,44 @@ def print_multiple_nakladnoy():
 
   conn = get_db_connection()
   output = io.BytesIO()
+  kind = request.args.get('kind', 'shops')
+  if kind == 'warehouse':
+    selected = []
+    for order_id in ids:
+      order = conn.execute('SELECT id,shop_name,agent_name,date,items_text,status FROM orders WHERE id=?', (order_id,)).fetchone()
+      if order:
+        selected.append(order)
+    if not selected:
+      conn.close()
+      return 'Tanlangan buyurtmalar topilmadi.', 404
+    totals = {}
+    for order in selected:
+      for item in parse_order_item_lines(order['items_text']):
+        entry = totals.setdefault(item['name'], {'qty': 0.0, 'orders': []})
+        entry['qty'] += safe_number(item['qty'])
+        entry['orders'].append(str(order['id']))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Zavsklad yig‘indi'
+    ws['A1'] = 'XOJI AKA FACTORY — ZAVSKLAD UCHUN YIG‘INDI NAKLADNOY'
+    ws['A1'].font = Font(name='Arial', size=14, bold=True)
+    ws['A2'] = f"Buyurtmalar: {', '.join('#'+str(o['id']) for o in selected)}"
+    ws['A3'] = f"Sana: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    headers = ['№', 'Mahsulot', 'Umumiy miqdor', 'Qaysi buyurtmalardan']
+    for col, header in enumerate(headers, 1):
+      ws.cell(row=5, column=col, value=header).font = Font(bold=True)
+    for idx, (name, data) in enumerate(sorted(totals.items()), 1):
+      ws.cell(row=5+idx, column=1, value=idx)
+      ws.cell(row=5+idx, column=2, value=name)
+      ws.cell(row=5+idx, column=3, value=data['qty'])
+      ws.cell(row=5+idx, column=4, value=', '.join('#'+x for x in dict.fromkeys(data['orders'])))
+    ws.cell(row=7+len(totals), column=2, value='JAMI MAHSULOT TURLARI:')
+    ws.cell(row=7+len(totals), column=3, value=len(totals))
+    for col, width in {'A':8,'B':34,'C':20,'D':36}.items(): ws.column_dimensions[col].width = width
+    wb.save(output)
+    output.seek(0)
+    conn.close()
+    return send_file(output, as_attachment=True, download_name='Zavsklad_yigindi_nakladnoy.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   wb = Workbook()
   wb.remove(wb.active)
 
