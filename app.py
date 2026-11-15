@@ -585,8 +585,8 @@ def init_web_db():
       ('', 'Farxod Market', '', 'Senter Kamaz', '', 'Dushanba', 'PSKUL'),
       ('', 'Ariqcha Market', '', 'Senter Kamaz', '', 'Dushanba', 'PSKUL'),
       ('', 'Xusan Parnik', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL'),
-      ('', 'Beganchiyeva Gulbahor', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL')
-      ('', 'Safo Market', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL')
+      ('', 'Beganchiyeva Gulbahor', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL'),
+      ('', 'Safo Market', '', 'Termiz tuman', '', 'Dushanba', 'PSKUL'),
       ('', 'Xolida Market', '', 'Limon', '', 'Dushanba', 'Limon'),
       ('', 'Nodirov Mansur', '', 'Termiz shahar', 'Yoshar markazi yonboshi', 'Dushanba', 'Port va Senter'),
       ('', 'Nazarova Nodira', '', 'Termiz shahar', 'SOHIL MED TEXNIKUM TOGRISI', 'Dushanba', 'Port va Senter'),
