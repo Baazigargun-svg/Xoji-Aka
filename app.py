@@ -10,6 +10,8 @@ import hashlib
 import shutil
 import uuid
 import re
+import urllib.request
+import urllib.error
 from html import escape as html_escape
 from imagekitio import ImageKit
 from werkzeug.utils import secure_filename
@@ -283,11 +285,83 @@ def verify_staff_link(tg_id):
     return False
 
 
-def create_database_backup():
-  """SQLite backup API orqali izchil zaxira yaratadi; oxirgi 14 nusxa saqlanadi."""
+# ===== BULUTGA AVTOMATIK DB ZAXIRASI (SUPABASE STORAGE) =====
+# Render diski vaqtinchalik. Shu sabab SQLite bazasi Supabase Storage'ga
+# har 5 daqiqada yuklanadi va yangi deployda avtomatik qayta tiklanadi.
+SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').strip().rstrip('/')
+SUPABASE_SERVICE_ROLE_KEY = (os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or '').strip()
+SUPABASE_BUCKET = (os.environ.get('SUPABASE_BUCKET') or 'xoji-aka-backups').strip()
+SUPABASE_DB_OBJECT = 'xoji_aka_factory.db'
+_db_backup_lock = threading.Lock()
+
+
+def _supabase_storage_url():
+  from urllib.parse import quote
+  return f"{SUPABASE_URL}/storage/v1/object/{quote(SUPABASE_BUCKET, safe='')}/{quote(SUPABASE_DB_OBJECT, safe='/')}"
+
+
+def _supabase_headers(content_type='application/octet-stream'):
+  return {
+    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+    'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+    'Content-Type': content_type,
+    'x-upsert': 'true',
+  }
+
+
+def restore_database_from_cloud():
+  """Mahalliy DB yo‘q bo‘lsa, oxirgi bulut nusxasini xavfsiz tiklaydi."""
+  if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+    app.logger.warning('Bulut DB zaxirasi sozlanmagan: SUPABASE_URL yoki SUPABASE_SERVICE_ROLE_KEY yo‘q.')
+    return False
+  if os.path.exists(DB_NAME) and os.path.getsize(DB_NAME) > 0:
+    app.logger.info('Mahalliy DB mavjud; bulut nusxasi ustidan yozilmadi.')
+    return False
+  temp_path = DB_NAME + '.restore.tmp'
   try:
-    if not os.path.exists(DB_NAME):
-      return
+    os.makedirs(os.path.dirname(os.path.abspath(DB_NAME)), exist_ok=True)
+    req = urllib.request.Request(_supabase_storage_url(), headers=_supabase_headers(), method='GET')
+    with urllib.request.urlopen(req, timeout=60) as response:
+      data = response.read()
+    if not data:
+      raise RuntimeError('Bulutdagi DB fayli bo‘sh.')
+    with open(temp_path, 'wb') as f:
+      f.write(data)
+    check = sqlite3.connect(temp_path)
+    try:
+      result = check.execute('PRAGMA integrity_check').fetchone()
+      if not result or result[0] != 'ok':
+        raise RuntimeError(f"Tiklanayotgan DB tekshiruvdan o‘tmadi: {result}")
+    finally:
+      check.close()
+    os.replace(temp_path, DB_NAME)
+    app.logger.info('DB Supabase bulut zaxirasidan tiklandi (%s bayt).', len(data))
+    return True
+  except urllib.error.HTTPError as e:
+    if e.code == 404:
+      app.logger.info('Supabase bucketda hali DB nusxasi yo‘q; yangi baza yaratiladi.')
+    else:
+      app.logger.exception('Bulut DB nusxasini olishda HTTP xato: %s', e.code)
+    return False
+  except Exception:
+    app.logger.exception('Bulut DB nusxasini tiklashda xato')
+    return False
+  finally:
+    try:
+      if os.path.exists(temp_path): os.remove(temp_path)
+    except OSError: pass
+
+
+def create_database_backup():
+  """SQLite backup API bilan izchil nusxa yaratadi va Supabase'ga yuklaydi."""
+  if not _db_backup_lock.acquire(blocking=False):
+    app.logger.info('Oldingi DB zaxiralash jarayoni hali tugamagan; bu safar o‘tkazildi.')
+    return False
+  destination = None
+  try:
+    if not os.path.exists(DB_NAME) or os.path.getsize(DB_NAME) == 0:
+      app.logger.warning('DB fayli hali mavjud emas; zaxira olinmadi.')
+      return False
     os.makedirs(BACKUP_DIR, exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     destination = os.path.join(BACKUP_DIR, f'xoji_aka_factory_{stamp}.db')
@@ -298,20 +372,33 @@ def create_database_backup():
     finally:
       target_conn.close()
       source_conn.close()
+    if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+      with open(destination, 'rb') as f:
+        payload = f.read()
+      req = urllib.request.Request(_supabase_storage_url(), data=payload, headers=_supabase_headers(), method='POST')
+      with urllib.request.urlopen(req, timeout=90) as response:
+        response.read()
+      app.logger.info('DB bulutga muvaffaqiyatli zaxiralandi (%s bayt).', len(payload))
+    else:
+      app.logger.warning('DB faqat vaqtinchalik lokal papkaga saqlandi; Supabase Environment sozlanmagan!')
     backups = sorted([os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith('.db')], key=os.path.getmtime, reverse=True)
     for old_path in backups[14:]:
       try: os.remove(old_path)
-      except OSError: app.logger.exception('Eski zaxirani o‘chirishda xato: %s', old_path)
-    app.logger.info('Ma’lumotlar bazasi zaxiralandi: %s', destination)
+      except OSError: app.logger.exception('Eski lokal zaxirani o‘chirishda xato: %s', old_path)
+    return True
   except Exception:
-    app.logger.exception('Avtomatik baza zaxirasida xato')
+    app.logger.exception('Avtomatik bulut DB zaxirasida xato')
+    return False
+  finally:
+    _db_backup_lock.release()
 
 
 def backup_scheduler():
-  # Har 24 soatda; ilova ishga tushganda ham zaxira olinadi.
+  # Har 5 daqiqada bulutga yangi nusxa; server uxlab qolsa, uyg‘onganda davom etadi.
   while True:
-    time.sleep(24 * 60 * 60)
+    time.sleep(5 * 60)
     create_database_backup()
+# ===== BULUT DB ZAXIRASI TUGADI =====
 
 
 def init_web_db():
@@ -6545,9 +6632,11 @@ def run_daily_business_reports():
 
 
 if __name__ == '__main__':
+    # Avval bulutdagi DB (agar mavjud bo‘lsa) tiklanadi, keyin jadvallar yangilanadi.
+    restore_database_from_cloud()
     init_web_db()
     create_database_backup()
-    threading.Thread(target=backup_scheduler, daemon=True).start()
+    threading.Thread(target=backup_scheduler, daemon=True, name='db-cloud-backup').start()
 
     if not ADMIN_PASSWORD:
         print("DIQQAT: ADMIN_PASSWORD Render Environment’da sozlanmagan. Admin login yopiq qoladi.")
