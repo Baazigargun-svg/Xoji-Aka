@@ -3799,7 +3799,7 @@ HTML_TEMPLATE = """
                 <a href="/logout" class="btn btn-sm btn-outline-danger fw-bold"><i class="bi bi-box-arrow-right me-1"></i>Chiqish</a>
                 <form method="GET" action="/global_search" class="d-flex gap-1 m-0"><input class="form-control form-control-sm" name="q" placeholder="Do‘kon, mahsulot, buyurtma..." style="width:210px" required><button class="btn btn-sm btn-outline-primary">Qidirish</button></form>
                 <a href="/audit_history" class="btn btn-sm btn-outline-dark">📜 Harakatlar tarixi</a><a href="/rahbar_mobile" class="btn btn-sm btn-outline-primary">📱 Rahbar mobil paneli</a>
-                <a href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Excelga Yuklab Olish</a>
+                <a id="exportCurrentPage" href="/export_excel" class="btn btn-sm btn-success fw-bold"><i class="bi bi-file-earmark-excel me-1"></i>Shu sahifani Excelga olish</a>
                 
                 <form method="GET" action="/" class="d-flex align-items-center gap-1 m-0 bg-light p-1 rounded border">
                     <span class="text-muted small px-1">Dan:</span>
@@ -3833,6 +3833,17 @@ HTML_TEMPLATE = """
                                 <h2 class="fw-bold mt-1 mb-0">{{ "{:,.0f}".format(total_debt) }} <span class="fs-6">so'm</span></h2>
                             </div>
                         </div>
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3 col-6"><div class="card-glass p-3 h-100"><div class="small text-muted">Joriy oy AKB — tashrif buyurilgan do‘konlar</div><div class="fs-2 fw-bold text-primary">{{ month_akb_count }} <small class="fs-6">ta</small></div></div></div>
+                        <div class="col-md-3 col-6"><div class="card-glass p-3 h-100"><div class="small text-muted">OKB — jami do‘konlar bazasi</div><div class="fs-2 fw-bold text-success">{{ total_okb_count }} <small class="fs-6">ta</small></div></div></div>
+                        <div class="col-md-6"><div class="card-glass p-3 h-100"><div class="small text-muted">Joriy oy agentlar buyurtmalari</div><div class="fs-5 fw-bold">{{ month_agent_orders_total }} ta buyurtma · {{ '{:,.0f}'.format(month_agent_revenue_total) }} so‘m</div><div class="small text-muted">Bekor qilingan buyurtmalar hisobga olinmaydi</div></div></div>
+                    </div>
+                    <div class="card-glass p-3 mb-4">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h6 class="fw-bold mb-0">📊 Joriy oy — agentlar olgan buyurtmalari</h6><span class="small text-muted">Buyurtmalar soni va jami summa</span></div>
+                        <div class="table-responsive mt-2"><table class="table table-sm table-custom table-hover mb-0"><thead><tr><th>#</th><th>Agent</th><th>Buyurtmalar soni</th><th class="text-end">Jami buyurtma summasi</th></tr></thead><tbody>
+                        {% for a in month_agent_rank_rows %}<tr><td>{{ loop.index }}</td><td class="fw-semibold">{{ a.agent }}</td><td>{{ a.orders_count }} ta</td><td class="text-end fw-bold">{{ '{:,.0f}'.format(a.revenue) }} so‘m</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Joriy oyda agent buyurtmalari yo‘q.</td></tr>{% endfor %}
+                        </tbody></table></div>
                     </div>
                     <div class="card-glass p-3 mb-4 border-start border-4 border-warning"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h6 class="fw-bold mb-0">🔔 Boshqaruv ogohlantirishlari</h6><span class="badge bg-warning text-dark">{{ dashboard_alert_count }} ta e’tibor talab qiladi</span></div><div class="row g-2 mt-1"><div class="col-md-4"><a class="text-decoration-none" href="/#tab-inventory">📦 Kam qoldiq: <b>{{dashboard_low_products|length}}</b></a></div><div class="col-md-4">⏳ 30 kun ichida muddati tugaydigan partiyalar: <b>{{dashboard_batches|length}}</b></div><div class="col-md-3">🏪 Kechikkan do‘kon tashriflari: <b>{{overdue_visits_count}}</b></div><div class="col-md-3">💳 Katta qarzdor do‘konlar: <b>{{dashboard_large_debts|length}}</b></div></div>{% if dashboard_large_debts %}<div class="mt-2 small"><b>Qarz chegarasi: {{"{:,.0f}".format(large_debt_threshold)}} so‘m</b>{% for d in dashboard_large_debts[:5] %}<div class="text-danger">{{d.name}} — {{"{:,.0f}".format(d.debt)}} so‘m</div>{% endfor %}</div>{% endif %}</div>
                     <div class="row g-4">
@@ -4590,6 +4601,31 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
+<script>
+(function(){
+  const link=document.getElementById('exportCurrentPage');
+  if(!link)return;
+  function updateExportHref(){
+    const params=new URLSearchParams(window.location.search);
+    let view='dashboard';
+    if(window.location.pathname==='/business_plus') view='section:'+((params.get('section')||'finance'));
+    else {
+      const active=document.querySelector('.tab-pane.active');
+      if(active && active.id) view=active.id.replace(/^tab-/,'');
+      else if(window.location.hash) view=window.location.hash.replace(/^#tab-/,'');
+      else { const saved=sessionStorage.getItem('xoji_active_tab'); if(saved)view=saved.replace(/^#tab-/,''); }
+    }
+    const start=document.querySelector('input[name="start_date"]')?.value||params.get('start_date')||'';
+    const end=document.querySelector('input[name="end_date"]')?.value||params.get('end_date')||'';
+    const q=new URLSearchParams({view:view, start_date:start, end_date:end});
+    link.href='/export_excel?'+q.toString();
+  }
+  updateExportHref();
+  document.addEventListener('shown.bs.tab',updateExportHref);
+  window.addEventListener('hashchange',updateExportHref);
+  link.addEventListener('click',updateExportHref);
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let allProductsList = [
@@ -4883,6 +4919,13 @@ def operator_dashboard():
   catalog_items = conn.execute('SELECT * FROM catalog_items ORDER BY (SELECT sort_order FROM catalog_categories WHERE name=catalog_items.category), COALESCE(sort_order, id), id').fetchall()
   catalog_categories = conn.execute('SELECT * FROM catalog_categories ORDER BY sort_order, name').fetchall()
   today_iso = datetime.now().strftime('%Y-%m-%d')
+  month_start = datetime.now().strftime('%Y-%m-01')
+  month_akb_count = conn.execute("SELECT COUNT(DISTINCT shop_id) FROM shop_visits WHERE substr(visit_date,1,10) BETWEEN ? AND ?", (month_start, today_iso)).fetchone()[0]
+  total_okb_count = conn.execute('SELECT COUNT(*) FROM shops').fetchone()[0]
+  month_agent_raw = conn.execute("SELECT COALESCE(agent_name,'Noma’lum') agent_name, COUNT(*) orders_count, COALESCE(SUM(total_sum),0) revenue FROM orders WHERE substr(date,1,10) BETWEEN ? AND ? AND COALESCE(status,'') NOT IN ('Bekor','Bekor qilindi') GROUP BY COALESCE(agent_name,'Noma’lum') ORDER BY revenue DESC", (month_start, today_iso)).fetchall()
+  month_agent_rank_rows = [{'agent': r['agent_name'], 'orders_count': int(r['orders_count'] or 0), 'revenue': safe_number(r['revenue'])} for r in month_agent_raw]
+  month_agent_orders_total = sum(r['orders_count'] for r in month_agent_rank_rows)
+  month_agent_revenue_total = sum(r['revenue'] for r in month_agent_rank_rows)
 
   orders = conn.execute("SELECT * FROM orders WHERE substr(date, 1, 10) BETWEEN ? AND ? ORDER BY id DESC", (start_date, end_date)).fetchall()
 
@@ -5097,6 +5140,11 @@ def operator_dashboard():
       today_agent_values=today_agent_values,
       today_agent_rank_rows=today_agent_rank_rows,
       today_agent_product_rows=today_agent_product_rows,
+      month_akb_count=month_akb_count,
+      total_okb_count=total_okb_count,
+      month_agent_rank_rows=month_agent_rank_rows,
+      month_agent_orders_total=month_agent_orders_total,
+      month_agent_revenue_total=month_agent_revenue_total,
       dashboard_shop_crm=dashboard_shop_crm,
       dashboard_shop_visits=dashboard_shop_visits,
       dashboard_batches=dashboard_batches,
@@ -6180,25 +6228,123 @@ def logout():
 
 @app.route('/export_excel')
 def export_excel():
+  if not session.get('logged_in') and not _plus_ok():
+    return redirect(url_for('login'))
+  view = (request.args.get('view') or 'dashboard').strip().lower()
+  start_date = (request.args.get('start_date') or '').strip()
+  end_date = (request.args.get('end_date') or '').strip()
   conn = get_db_connection()
-  orders = pd.read_sql_query('SELECT * FROM orders', conn)
-  shops = pd.read_sql_query('SELECT * FROM shops', conn)
-  products = pd.read_sql_query('SELECT * FROM products', conn)
-  conn.close()
-
+  ensure_business_plus_schema(conn)
   output = io.BytesIO()
-  with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    orders.to_excel(writer, sheet_name='Buyurtmalar', index=False)
-    shops.to_excel(writer, sheet_name='Dokonlar', index=False)
-    products.to_excel(writer, sheet_name='Sklad', index=False)
-  output.seek(0)
+  try:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Hisobot'
+    ws.sheet_view.showGridLines = False
+    header_fill = PatternFill('solid', fgColor='17365D')
+    header_font = Font(color='FFFFFF', bold=True)
+    thin = Side(style='thin', color='D9E2F3')
 
-  return send_file(
-      output,
-      as_attachment=True,
-      download_name='Xoji_Aka_Hisobot.xlsx',
-      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  )
+    def add_table(sheet_name, title, rows, headers=None):
+      sh = wb.create_sheet(title=sheet_name[:31])
+      sh.sheet_view.showGridLines = False
+      rows = [dict(r) if not isinstance(r, dict) else r for r in rows]
+      if headers is None:
+        headers = list(rows[0].keys()) if rows else ['Ma’lumot mavjud emas']
+      sh.append([title])
+      sh.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(1, len(headers)))
+      sh['A1'].font = Font(size=14, bold=True, color='17365D')
+      sh.append(headers)
+      for cell in sh[2]:
+        cell.fill = header_fill; cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+      for row in rows:
+        sh.append([row.get(h, '') for h in headers])
+      sh.freeze_panes = 'A3'
+      sh.auto_filter.ref = f'A2:{get_column_letter(max(1,len(headers)))}{max(2, sh.max_row)}'
+      for col_idx in range(1, len(headers)+1):
+        letter = get_column_letter(col_idx)
+        values = [str(sh.cell(r,col_idx).value or '') for r in range(2, min(sh.max_row, 202)+1)]
+        width = min(38, max(12, max([len(v) for v in values] + [len(str(headers[col_idx-1]))]) + 2))
+        sh.column_dimensions[letter].width = width
+      for row in sh.iter_rows(min_row=3):
+        for cell in row:
+          cell.alignment = Alignment(vertical='top', wrap_text=True)
+          cell.border = Border(bottom=thin)
+          if isinstance(cell.value, (int, float)):
+            cell.number_format = '#,##0.00;[Red]-#,##0.00'
+      sh.row_dimensions[2].height = 30
+      return sh
+
+    def query_rows(sql, params=()):
+      return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+    if view.startswith('section:'):
+      section = view.split(':',1)[1]
+      section_map = {
+        'finance': [('Kirimlar', 'SELECT * FROM incomes ORDER BY id DESC'), ('Chiqimlar', 'SELECT * FROM expenses ORDER BY id DESC'), ('Avanslar', 'SELECT * FROM advances ORDER BY id DESC')],
+        'agents': [('Agentlar', "SELECT tg_id,name,phone,role,territory,salary_percent FROM users WHERE lower(role) LIKE '%agent%' ORDER BY name")],
+        'shops': [('Do‘konlar', 'SELECT * FROM shops ORDER BY name'), ('Tashriflar', 'SELECT * FROM shop_visits ORDER BY visit_date DESC,id DESC')],
+        'warehouse': [('Mahsulot qoldig‘i', 'SELECT * FROM products ORDER BY name'), ('Partiyalar', 'SELECT * FROM stock_batches ORDER BY id DESC'), ('Kirimlar', 'SELECT * FROM stock_receipts ORDER BY id DESC')],
+        'production': [('Ishlab chiqarish', 'SELECT * FROM production_batches ORDER BY id DESC'), ('Retseptlar', 'SELECT * FROM production_recipes ORDER BY id DESC'), ('Xomashyo qoldig‘i', 'SELECT * FROM raw_materials ORDER BY name')],
+        'delivery': [('Buyurtmalar', "SELECT * FROM orders WHERE COALESCE(status,'') IN ('Tayyor','Yetkazilmoqda','Yetkazildi') ORDER BY id DESC")],
+      }
+      tables = section_map.get(section, section_map['finance'])
+      for sheet_name, sql in tables:
+        try: add_table(sheet_name, sheet_name, query_rows(sql))
+        except Exception: pass
+      filename = f'Xoji_Aka_{section}.xlsx'
+    else:
+      if view == 'orders':
+        sql = 'SELECT * FROM orders'
+        params = []
+        if start_date and end_date:
+          sql += ' WHERE substr(date,1,10) BETWEEN ? AND ?'; params = [start_date,end_date]
+        sql += ' ORDER BY id DESC'
+        add_table('Buyurtmalar', 'Buyurtmalar ro‘yxati', query_rows(sql, params))
+        filename = 'Xoji_Aka_Buyurtmalar.xlsx'
+      elif view == 'inventory':
+        add_table('Sklad', 'Mahsulot qoldig‘i', query_rows('SELECT * FROM products ORDER BY name'))
+        filename = 'Xoji_Aka_Sklad.xlsx'
+      elif view == 'clients':
+        add_table('Do‘konlar', 'Do‘konlar ro‘yxati', query_rows('SELECT * FROM shops ORDER BY name'))
+        filename = 'Xoji_Aka_Dokonlar.xlsx'
+      elif view == 'agents':
+        add_table('Agentlar', 'Agentlar ro‘yxati', query_rows("SELECT tg_id,name,phone,role,territory,salary_percent FROM users WHERE lower(role) LIKE '%agent%' ORDER BY name"))
+        filename = 'Xoji_Aka_Agentlar.xlsx'
+      elif view == 'kassa':
+        add_table('Kirimlar', 'Kassa kirimlari', query_rows('SELECT * FROM incomes ORDER BY id DESC'))
+        add_table('Chiqimlar', 'Kassa chiqimlari', query_rows('SELECT * FROM expenses ORDER BY id DESC'))
+        add_table('Avanslar', 'Xodim avanslari', query_rows('SELECT * FROM advances ORDER BY id DESC'))
+        filename = 'Xoji_Aka_Kassa.xlsx'
+      elif view == 'catalog':
+        add_table('Katalog', 'Faol katalog mahsulotlari', query_rows('SELECT * FROM catalog_items ORDER BY id'))
+        filename = 'Xoji_Aka_Katalog.xlsx'
+      elif view == 'reports':
+        params = []
+        sql = 'SELECT id,date,shop_name,agent_name,total_sum,status FROM orders'
+        if start_date and end_date:
+          sql += ' WHERE substr(date,1,10) BETWEEN ? AND ?'; params = [start_date,end_date]
+        sql += ' ORDER BY date DESC,id DESC'
+        add_table('Buyurtma hisoboti', 'Tanlangan davr buyurtmalari', query_rows(sql, params))
+        add_table('Kirimlar', 'Kassa kirimlari', query_rows('SELECT * FROM incomes ORDER BY date DESC,id DESC'))
+        add_table('Chiqimlar', 'Kassa chiqimlari', query_rows('SELECT * FROM expenses ORDER BY date DESC,id DESC'))
+        filename = 'Xoji_Aka_Hisobot.xlsx'
+      else:
+        today = datetime.now().strftime('%Y-%m-%d'); month_start = datetime.now().strftime('%Y-%m-01')
+        month_akb = conn.execute('SELECT COUNT(DISTINCT shop_id) FROM shop_visits WHERE substr(visit_date,1,10) BETWEEN ? AND ?', (month_start,today)).fetchone()[0]
+        okb = conn.execute('SELECT COUNT(*) FROM shops').fetchone()[0]
+        agent_rows = query_rows("SELECT COALESCE(agent_name,'Noma’lum') agent,COUNT(*) orders_count,COALESCE(SUM(total_sum),0) revenue FROM orders WHERE substr(date,1,10) BETWEEN ? AND ? AND COALESCE(status,'') NOT IN ('Bekor','Bekor qilindi') GROUP BY COALESCE(agent_name,'Noma’lum') ORDER BY revenue DESC", (month_start,today))
+        add_table('Ko‘rsatkichlar', 'Bosh panel — joriy oy', [{'Ko‘rsatkich':'AKB — tashrif buyurilgan do‘konlar', 'Qiymat':month_akb}, {'Ko‘rsatkich':'OKB — jami do‘konlar', 'Qiymat':okb}], ['Ko‘rsatkich','Qiymat'])
+        add_table('Agentlar', 'Agentlar — joriy oy buyurtmalari', agent_rows, ['agent','orders_count','revenue'])
+        filename = 'Xoji_Aka_Bosh_panel.xlsx'
+    if len(wb.sheetnames) == 1 and ws.max_row == 1:
+      wb.remove(ws)
+    wb.save(output)
+  finally:
+    conn.close()
+  output.seek(0)
+  return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 
@@ -6279,7 +6425,7 @@ BUSINESS_PLUS_TEMPLATE = r'''<!doctype html>
 <html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xoji Aka — {{section_title}}</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 <style>body{background:#f4f6fb;color:#1e293b}.card{border:0;border-radius:14px;box-shadow:0 4px 18px #15234a0d}.table{font-size:13px}.module-nav a{white-space:nowrap}.muted{color:#64748b}</style></head><body>
-<main class="container-fluid p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h3 class="mb-1">⭐ Xoji Aka — {{section_title}}</h3><div class="muted">Faqat shu yo‘nalishga tegishli boshqaruv vositalari · {{today}}</div></div><a href="/#tab-dashboard" class="btn btn-outline-secondary">← Bosh panel</a></div>
+<main class="container-fluid p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h3 class="mb-1">⭐ Xoji Aka — {{section_title}}</h3><div class="muted">Faqat shu yo‘nalishga tegishli boshqaruv vositalari · {{today}}</div></div><div class="d-flex gap-2 flex-wrap"><a id="exportCurrentPage" href="/export_excel?view=section:finance" class="btn btn-success">📥 Shu sahifani Excelga olish</a><a href="/#tab-dashboard" class="btn btn-outline-secondary">← Bosh panel</a></div></div>
 <div class="module-nav d-flex flex-wrap gap-2 mb-4">
 <a class="btn btn-sm {% if section=='finance' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/business_plus?section=finance">💰 Moliya</a>
 <a class="btn btn-sm {% if section=='agents' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/business_plus?section=agents">👥 Agentlar</a>
@@ -6315,7 +6461,7 @@ BUSINESS_PLUS_TEMPLATE = r'''<!doctype html>
 {% elif section=='delivery' %}
 <div class="card p-3"><h5>Ekspeditor yetkazib berish marshruti</h5><p class="muted">GPS koordinatasi kiritilgan do‘konlarni taxminiy yaqinlik bo‘yicha tartiblaydi. Yo‘l holati va tirbandlik hisoblanmaydi.</p><a class="btn btn-primary" href="/business_plus/route">🚚 Marshrutni hisoblash</a></div>
 {% endif %}
-</main><script>function addRecipeRow(){const c=document.getElementById('recipeRows');const r=c.querySelector('.recipe-row').cloneNode(true);r.querySelector('select').selectedIndex=0;r.querySelector('input').value='';c.appendChild(r);}function gps(){let s=document.getElementById('gpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('lat').value=p.coords.latitude;document.getElementById('lon').value=p.coords.longitude;s.textContent='GPS olindi. Endi tashrifni saqlang.';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script></body></html>
+</main><script>function addRecipeRow(){const c=document.getElementById('recipeRows');const r=c.querySelector('.recipe-row').cloneNode(true);r.querySelector('select').selectedIndex=0;r.querySelector('input').value='';c.appendChild(r);}function gps(){let s=document.getElementById('gpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('lat').value=p.coords.latitude;document.getElementById('lon').value=p.coords.longitude;s.textContent='GPS olindi. Endi tashrifni saqlang.';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script><script>document.addEventListener('DOMContentLoaded',()=>{const a=document.getElementById('exportCurrentPage');if(a){const p=new URLSearchParams(location.search);a.href='/export_excel?view='+encodeURIComponent('section:'+(p.get('section')||'finance'));}});</script></body></html>
 '''
 
 def ensure_business_plus_schema(conn):
