@@ -6304,11 +6304,18 @@ BUSINESS_PLUS_TEMPLATE = r'''<!doctype html>
 <div class="row g-3"><div class="col-xl-6"><div class="card p-3"><h5>Shtrix-kod va minimal qoldiq</h5><form method="post" action="/business_plus/barcode" class="row g-2"><div class="col-6"><select class="form-select" name="product_id" required><option value="">Mahsulot</option>{% for p in products %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="barcode" placeholder="Shtrix-kod" required></div><div class="col-6"><input class="form-control" name="min_stock" type="number" min="0" step="0.01" placeholder="Minimal qoldiq"></div><div class="col-6"><button class="btn btn-primary w-100">Saqlash</button></div></form><form method="get" action="/business_plus/scan" class="d-flex gap-2 mt-3"><input class="form-control" name="barcode" placeholder="Skaner qilingan kod"><button class="btn btn-dark">Topish</button></form><hr><h6>Kam qolgan mahsulotlar</h6>{% for p in low %}<div class="text-danger border-bottom py-1">{{p.name}} — qoldiq {{p.stock}} (minimum {{p.min_stock}})</div>{% else %}<small class="muted">Kam qoldiq yo‘q yoki minimal limit belgilanmagan.</small>{% endfor %}</div></div>
 <div class="col-xl-6"><div class="card p-3"><h5>Partiya va yaroqlilik muddati</h5><form method="post" action="/business_plus/batch" class="row g-2"><div class="col-6"><select class="form-select" name="product_name" required><option value="">Mahsulot</option>{% for p in products %}<option>{{p.name}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="qty" type="number" min="0.01" step="0.01" placeholder="Miqdor" required></div><div class="col-4"><input class="form-control" name="batch_code" placeholder="Partiya №"></div><div class="col-4"><input class="form-control" name="produced_date" type="date"></div><div class="col-4"><input class="form-control" name="expiry_date" type="date"></div><div class="col-6"><input class="form-control" name="unit_cost" type="number" min="0" placeholder="Tannarx"></div><div class="col-6"><button class="btn btn-success w-100">Partiyani kirim qilish</button></div></form><hr><h6>30 kun ichida muddati tugaydigan partiyalar</h6>{% for b in batches %}<div class="text-danger border-bottom py-1">{{b.product_name}} — {{b.expiry_date}} — {{b.qty}}</div>{% else %}<small class="muted">Yaqin muddatli partiya yo‘q.</small>{% endfor %}</div></div></div>
 {% elif section=='production' %}
-<div class="card p-3"><h5>Buyurtmalar asosida ishlab chiqarish rejasi</h5><p class="muted">Yangi, tasdiqlangan va tayyorlanayotgan buyurtmalardagi mahsulotlar yig‘indisi.</p><div class="table-responsive"><table class="table table-sm"><tr><th>Mahsulot</th><th>Kerakli miqdor</th><th>Ombordagi qoldiq</th><th>Yetishmaydi</th></tr>{% for name,qty in production.items() %}{% set p=product_map.get(name) %}<tr><td>{{name}}</td><td>{{'%.2f'|format(qty)}}</td><td>{{p.stock if p else 0}}</td><td class="text-danger fw-bold">{{[qty-(p.stock if p else 0),0]|max}}</td></tr>{% else %}<tr><td colspan="4">Faol buyurtma yo‘q.</td></tr>{% endfor %}</table></div></div>
+<div class="row g-3 mb-3">
+<div class="col-xl-6"><div class="card p-3 h-100"><h5>🥩 Xomashyo qo‘shish</h5><form method="post" action="/business_plus/raw_material/add" class="row g-2"><div class="col-6"><input class="form-control" name="name" placeholder="Masalan: Mol go‘shti" required></div><div class="col-3"><input class="form-control" name="unit" placeholder="kg/litr/dona" required></div><div class="col-3"><input class="form-control" name="min_stock" type="number" min="0" step="0.001" placeholder="Min. qoldiq"></div><div class="col-12"><button class="btn btn-primary">Xomashyo yaratish</button></div></form><hr><h6>📥 Xomashyo kirimi</h6><form method="post" action="/business_plus/raw_material/receipt" class="row g-2"><div class="col-5"><select class="form-select" name="material_id" required><option value="">Xomashyo</option>{% for m in raw_materials %}<option value="{{m.id}}">{{m.name}} ({{m.unit}})</option>{% endfor %}</select></div><div class="col-3"><input class="form-control" name="qty" type="number" min="0.001" step="0.001" placeholder="Miqdor" required></div><div class="col-3"><input class="form-control" name="unit_cost" type="number" min="0" step="0.01" placeholder="1 birlik narxi" required></div><div class="col-1"><button class="btn btn-success">+</button></div></form></div></div>
+<div class="col-xl-6"><div class="card p-3 h-100"><h5>📋 Retsept yaratish / yangilash</h5><p class="muted small">Retseptdagi chiqish miqdori — tayyor mahsulot omborga qaysi birlikda kirishini bildiradi. Masalan, 100 qadoq yoki 10 kg.</p><form method="post" action="/business_plus/recipe/save" class="row g-2"><div class="col-6"><select class="form-select" name="product_id" required><option value="">Tayyor mahsulot</option>{% for p in products %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></div><div class="col-3"><input class="form-control" name="output_qty" type="number" min="0.001" step="0.001" placeholder="Chiqish miqdori" required></div><div class="col-3"><input class="form-control" name="output_unit" placeholder="kg/qadoq/dona" required></div><div class="col-6"><input class="form-control" name="labor_cost" type="number" min="0" step="0.01" placeholder="Ish haqi (retsept partiyasi uchun)"></div><div class="col-6"><input class="form-control" name="overhead_cost" type="number" min="0" step="0.01" placeholder="Elektr/gaz/qadoq va boshqalar"></div><div class="col-12"><div class="d-flex justify-content-between align-items-center"><b class="small">Xomashyo sarfi</b><button type="button" class="btn btn-sm btn-outline-secondary" onclick="addRecipeRow()">+ Qator</button></div><div id="recipeRows">{% for i in range(4) %}<div class="row g-2 mt-1 recipe-row"><div class="col-7"><select class="form-select" name="material_id"><option value="">Xomashyo tanlang</option>{% for m in raw_materials %}<option value="{{m.id}}">{{m.name}} ({{m.unit}})</option>{% endfor %}</select></div><div class="col-5"><input class="form-control" name="material_qty" type="number" min="0" step="0.001" placeholder="Sarfi"></div></div>{% endfor %}</div></div><div class="col-12"><textarea class="form-control" name="note" rows="1" placeholder="Izoh (ixtiyoriy)"></textarea></div><div class="col-12"><button class="btn btn-primary">Retseptni saqlash</button></div></form></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>🏭 Ishlab chiqarishni qayd etish</h5><p class="muted small">Retsept bo‘yicha xomashyo avtomatik sarflanadi. Omborda yetarli xomashyo bo‘lmasa, ishlab chiqarish saqlanmaydi.</p><form method="post" action="/business_plus/production/create" class="row g-2"><div class="col-12"><select class="form-select" name="product_id" required><option value="">Mahsulot / retsept</option>{% for r in recipes %}<option value="{{r.product_id}}">{{r.product_name}} — retsept: {{r.output_qty}} {{r.output_unit}}</option>{% endfor %}</select></div><div class="col-6"><input class="form-control" name="produced_qty" type="number" min="0.001" step="0.001" placeholder="Haqiqiy ishlab chiqarildi" required></div><div class="col-6"><input class="form-control" name="waste_qty" type="number" min="0" step="0.001" placeholder="Brak/chiqindi miqdori"></div><div class="col-4"><input class="form-control" name="batch_code" placeholder="Partiya №"></div><div class="col-4"><input class="form-control" name="produced_date" type="date"></div><div class="col-4"><input class="form-control" name="expiry_date" type="date"></div><div class="col-12"><input class="form-control" name="note" placeholder="Izoh / brak sababi"></div><div class="col-12"><button class="btn btn-success">Ishlab chiqarishni yakunlash va omborga kirim qilish</button></div></form></div></div>
+<div class="col-xl-6"><div class="card p-3"><h5>📦 Xomashyo qoldiqlari</h5><div class="table-responsive"><table class="table table-sm"><tr><th>Nomi</th><th>Qoldiq</th><th>Birlik</th><th>O‘rtacha narx</th></tr>{% for m in raw_materials %}<tr><td>{{m.name}}</td><td>{{'%.3f'|format(m.stock)}}</td><td>{{m.unit}}</td><td>{{'{:,.0f}'.format(m.avg_cost)}} so‘m</td></tr>{% else %}<tr><td colspan="4">Xomashyo kiritilmagan.</td></tr>{% endfor %}</table></div></div></div>
+<div class="col-12"><div class="card p-3"><h5>📚 Retseptlar va oxirgi ishlab chiqarishlar</h5><div class="table-responsive"><table class="table table-sm"><tr><th>Mahsulot</th><th>Retsept chiqishi</th><th>Mehnat</th><th>Qo‘shimcha</th><th></th></tr>{% for r in recipes %}<tr><td>{{r.product_name}}</td><td>{{r.output_qty}} {{r.output_unit}}</td><td>{{'{:,.0f}'.format(r.labor_cost)}} so‘m</td><td>{{'{:,.0f}'.format(r.overhead_cost)}} so‘m</td><td>{{r.item_count}} ta xomashyo</td></tr>{% else %}<tr><td colspan="5">Hali retsept yo‘q.</td></tr>{% endfor %}</table></div><hr><div class="table-responsive"><table class="table table-sm"><tr><th>Sana</th><th>Mahsulot</th><th>Miqdor</th><th>Brak</th><th>Jami tannarx</th><th>Birlik tannarxi</th><th>Partiya</th></tr>{% for b in production_batches %}<tr><td>{{b.produced_date}}</td><td>{{b.product_name}}</td><td>{{b.produced_qty}} {{b.output_unit}}</td><td>{{b.waste_qty}}</td><td>{{'{:,.0f}'.format(b.total_cost)}} so‘m</td><td>{{'{:,.0f}'.format(b.unit_cost)}} so‘m</td><td>{{b.batch_code or '—'}}</td></tr>{% else %}<tr><td colspan="7">Ishlab chiqarish hali qayd etilmagan.</td></tr>{% endfor %}</table></div></div></div>
+<div class="col-12"><div class="card p-3"><h5>📝 Buyurtmalar asosida ishlab chiqarish rejasi</h5><p class="muted small">Yangi, tasdiqlangan va tayyorlanayotgan buyurtmalardagi mahsulotlar yig‘indisi.</p><div class="table-responsive"><table class="table table-sm"><tr><th>Mahsulot</th><th>Kerakli miqdor</th><th>Ombordagi qoldiq</th><th>Yetishmaydi</th></tr>{% for name,qty in production.items() %}{% set p=product_map.get(name) %}<tr><td>{{name}}</td><td>{{'%.2f'|format(qty)}}</td><td>{{p.stock if p else 0}}</td><td class="text-danger fw-bold">{{[qty-(p.stock if p else 0),0]|max}}</td></tr>{% else %}<tr><td colspan="4">Faol buyurtma yo‘q.</td></tr>{% endfor %}</table></div></div></div>
+</div>
 {% elif section=='delivery' %}
 <div class="card p-3"><h5>Ekspeditor yetkazib berish marshruti</h5><p class="muted">GPS koordinatasi kiritilgan do‘konlarni taxminiy yaqinlik bo‘yicha tartiblaydi. Yo‘l holati va tirbandlik hisoblanmaydi.</p><a class="btn btn-primary" href="/business_plus/route">🚚 Marshrutni hisoblash</a></div>
 {% endif %}
-</main><script>function gps(){let s=document.getElementById('gpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('lat').value=p.coords.latitude;document.getElementById('lon').value=p.coords.longitude;s.textContent='GPS olindi. Endi tashrifni saqlang.';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script></body></html>
+</main><script>function addRecipeRow(){const c=document.getElementById('recipeRows');const r=c.querySelector('.recipe-row').cloneNode(true);r.querySelector('select').selectedIndex=0;r.querySelector('input').value='';c.appendChild(r);}function gps(){let s=document.getElementById('gpsStatus');if(!navigator.geolocation){s.textContent='GPS qo‘llanmaydi';return;}s.textContent='GPS olinmoqda...';navigator.geolocation.getCurrentPosition(p=>{document.getElementById('lat').value=p.coords.latitude;document.getElementById('lon').value=p.coords.longitude;s.textContent='GPS olindi. Endi tashrifni saqlang.';},e=>s.textContent='GPS xatosi: '+e.message,{enableHighAccuracy:true,timeout:15000});}</script></body></html>
 '''
 
 def ensure_business_plus_schema(conn):
@@ -6329,6 +6336,32 @@ def ensure_business_plus_schema(conn):
     conn.execute('''CREATE TABLE IF NOT EXISTS staff_locations (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, staff_name TEXT, latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy REAL DEFAULT 0, recorded_at TEXT NOT NULL, purpose TEXT DEFAULT 'Ish tashrifi')''')
     conn.execute('''CREATE TABLE IF NOT EXISTS daily_report_settings (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER DEFAULT 1, send_time TEXT DEFAULT '20:00')''')
     conn.execute("INSERT OR IGNORE INTO daily_report_settings (id,enabled,send_time) VALUES (1,1,'20:00')")
+    # Ishlab chiqarish: xomashyo, retsept, partiya va harakatlar.
+    conn.execute('''CREATE TABLE IF NOT EXISTS raw_materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        unit TEXT NOT NULL DEFAULT 'kg', stock REAL NOT NULL DEFAULT 0,
+        avg_cost REAL NOT NULL DEFAULT 0, min_stock REAL NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS raw_material_movements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
+        qty_change REAL NOT NULL, unit_cost REAL DEFAULT 0, total_cost REAL DEFAULT 0,
+        reason TEXT DEFAULT '', reference TEXT DEFAULT '', date TEXT NOT NULL, actor TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS production_recipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL UNIQUE,
+        output_qty REAL NOT NULL, output_unit TEXT NOT NULL DEFAULT 'kg',
+        labor_cost REAL DEFAULT 0, overhead_cost REAL DEFAULT 0, note TEXT DEFAULT '',
+        updated_at TEXT DEFAULT '')''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS production_recipe_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, recipe_id INTEGER NOT NULL,
+        material_id INTEGER NOT NULL, qty REAL NOT NULL)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS production_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL,
+        product_name TEXT NOT NULL, recipe_id INTEGER, planned_qty REAL DEFAULT 0,
+        produced_qty REAL NOT NULL, output_unit TEXT DEFAULT '', waste_qty REAL DEFAULT 0,
+        raw_material_cost REAL DEFAULT 0, labor_cost REAL DEFAULT 0,
+        overhead_cost REAL DEFAULT 0, total_cost REAL DEFAULT 0,
+        unit_cost REAL DEFAULT 0, batch_code TEXT DEFAULT '', produced_date TEXT DEFAULT '',
+        expiry_date TEXT DEFAULT '', note TEXT DEFAULT '', actor TEXT DEFAULT '', created_at TEXT NOT NULL)''')
     conn.commit()
 
 def _plus_ok():
@@ -6359,8 +6392,14 @@ def business_plus():
     for sh in shops:
         cnt=conn.execute("SELECT COUNT(*) n,COALESCE(SUM(total_sum),0) s FROM orders WHERE shop_name=? AND status!='Bekor'",(sh['name'],)).fetchone()
         crm.append({'shop':sh,'count':cnt['n'],'turnover':cnt['s']})
-    product_map={p['name']:dict(p) for p in products}; conn.close()
-    return render_template_string(BUSINESS_PLUS_TEMPLATE,section=section,section_title=section_titles[section],today=today,revenue=revenue,cost=cost,exp=exp,debt=debt,orders=orders,shops=shops,products=products,batches=batches,visits=visits,settings=settings,expenses=expenses,ranking=sorted(ranking.items(),key=lambda x:x[1],reverse=True),production=production,low=low,crm=crm,product_map=product_map)
+    product_map={p['name']:dict(p) for p in products}
+    raw_materials=conn.execute('SELECT * FROM raw_materials ORDER BY name').fetchall()
+    recipes=conn.execute('''SELECT r.*,p.name product_name,
+        (SELECT COUNT(*) FROM production_recipe_items i WHERE i.recipe_id=r.id) item_count
+        FROM production_recipes r JOIN products p ON p.id=r.product_id ORDER BY p.name''').fetchall()
+    production_batches=conn.execute('SELECT * FROM production_batches ORDER BY id DESC LIMIT 30').fetchall()
+    conn.close()
+    return render_template_string(BUSINESS_PLUS_TEMPLATE,section=section,section_title=section_titles[section],today=today,revenue=revenue,cost=cost,exp=exp,debt=debt,orders=orders,shops=shops,products=products,batches=batches,visits=visits,settings=settings,expenses=expenses,ranking=sorted(ranking.items(),key=lambda x:x[1],reverse=True),production=production,low=low,crm=crm,product_map=product_map,raw_materials=raw_materials,recipes=recipes,production_batches=production_batches)
 
 @app.route('/rahbar_mobile')
 def director_mobile_dashboard():
@@ -6584,6 +6623,99 @@ def business_plus_batch():
     conn=get_db_connection(); ensure_business_plus_schema(conn); p=conn.execute('SELECT id FROM products WHERE name=?',(name,)).fetchone()
     if not p: conn.close(); return 'Mahsulot topilmadi',404
     stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor) VALUES(?,?,?,?,?,?,?,?)',(name,code,qty,produced,expiry,unit,stamp,current_actor())); batch_id=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; conn.execute('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=?',(qty,p['id'])); record_stock_movement(conn,name,qty,'Ishlab chiqarish partiyasi',code or expiry); log_audit(conn,'Ishlab chiqarish partiyasi yaratildi','stock_batch',batch_id,f'{name}; miqdor={qty}; partiya={code}; yaroqlilik={expiry}; tannarx={unit}'); conn.commit(); conn.close(); return redirect(url_for('business_plus', section='warehouse'))
+
+@app.route('/business_plus/raw_material/add', methods=['POST'])
+def business_plus_raw_material_add():
+    if not _plus_ok(): return redirect(url_for('login'))
+    name=(request.form.get('name') or '').strip(); unit=(request.form.get('unit') or '').strip(); minimum=safe_number(request.form.get('min_stock'),0,minimum=0)
+    if not name or not unit: return 'Xomashyo nomi va birligini kiriting.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        conn.execute('INSERT INTO raw_materials(name,unit,min_stock,created_at) VALUES(?,?,?,?)',(name,unit,minimum,datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        mid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        log_audit(conn,'Xomashyo yaratildi','raw_material',mid,f'{name}; birlik={unit}; minimum={minimum}')
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close(); return 'Bu nomdagi xomashyo avval kiritilgan.',400
+    conn.close(); return redirect(url_for('business_plus',section='production'))
+
+@app.route('/business_plus/raw_material/receipt', methods=['POST'])
+def business_plus_raw_material_receipt():
+    if not _plus_ok(): return redirect(url_for('login'))
+    mid=int(safe_number(request.form.get('material_id'),0,minimum=1)); qty=safe_number(request.form.get('qty'),0,minimum=0.001); price=safe_number(request.form.get('unit_cost'),0,minimum=0)
+    conn=get_db_connection(); ensure_business_plus_schema(conn); m=conn.execute('SELECT * FROM raw_materials WHERE id=?',(mid,)).fetchone()
+    if not m: conn.close(); return 'Xomashyo topilmadi.',404
+    old_stock=safe_number(m['stock']); old_cost=safe_number(m['avg_cost']); new_stock=old_stock+qty
+    avg=((old_stock*old_cost)+(qty*price))/new_stock if new_stock else price
+    stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'); total=qty*price
+    conn.execute('UPDATE raw_materials SET stock=?,avg_cost=? WHERE id=?',(new_stock,avg,mid))
+    conn.execute('INSERT INTO raw_material_movements(material_id,qty_change,unit_cost,total_cost,reason,reference,date,actor) VALUES(?,?,?,?,?,?,?,?)',(mid,qty,price,total,'Xomashyo kirimi','',stamp,current_actor()))
+    log_audit(conn,'Xomashyo kirimi','raw_material',mid,f'{m["name"]}; miqdor={qty} {m["unit"]}; narx={price}; jami={total}')
+    conn.commit(); conn.close(); return redirect(url_for('business_plus',section='production'))
+
+@app.route('/business_plus/recipe/save', methods=['POST'])
+def business_plus_recipe_save():
+    if not _plus_ok(): return redirect(url_for('login'))
+    pid=int(safe_number(request.form.get('product_id'),0,minimum=1)); output=safe_number(request.form.get('output_qty'),0,minimum=0.001); unit=(request.form.get('output_unit') or '').strip()
+    labor=safe_number(request.form.get('labor_cost'),0,minimum=0); overhead=safe_number(request.form.get('overhead_cost'),0,minimum=0); note=(request.form.get('note') or '').strip()
+    mids=request.form.getlist('material_id'); qtys=request.form.getlist('material_qty'); lines=[]
+    for i,raw_mid in enumerate(mids):
+        mid=int(safe_number(raw_mid,0,minimum=0)); q=safe_number(qtys[i] if i<len(qtys) else 0,0,minimum=0)
+        if mid and q>0: lines.append((mid,q))
+    if not pid or output<=0 or not unit or not lines: return 'Mahsulot, retsept chiqishi va kamida bitta xomashyo sarfini kiriting.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn); product=conn.execute('SELECT id,name FROM products WHERE id=?',(pid,)).fetchone()
+    if not product: conn.close(); return 'Tayyor mahsulot topilmadi.',404
+    for mid,q in lines:
+        if not conn.execute('SELECT 1 FROM raw_materials WHERE id=?',(mid,)).fetchone(): conn.close(); return 'Retseptdagi xomashyo topilmadi.',400
+    stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute('''INSERT INTO production_recipes(product_id,output_qty,output_unit,labor_cost,overhead_cost,note,updated_at)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET output_qty=excluded.output_qty,output_unit=excluded.output_unit,labor_cost=excluded.labor_cost,overhead_cost=excluded.overhead_cost,note=excluded.note,updated_at=excluded.updated_at''',(pid,output,unit,labor,overhead,note,stamp))
+    rid=conn.execute('SELECT id FROM production_recipes WHERE product_id=?',(pid,)).fetchone()['id']
+    conn.execute('DELETE FROM production_recipe_items WHERE recipe_id=?',(rid,))
+    conn.executemany('INSERT INTO production_recipe_items(recipe_id,material_id,qty) VALUES(?,?,?)',[(rid,mid,q) for mid,q in lines])
+    log_audit(conn,'Ishlab chiqarish retsepti saqlandi','production_recipe',rid,f'{product["name"]}; chiqish={output} {unit}; xomashyo qatorlari={len(lines)}')
+    conn.commit(); conn.close(); return redirect(url_for('business_plus',section='production'))
+
+@app.route('/business_plus/production/create', methods=['POST'])
+def business_plus_production_create():
+    if not _plus_ok(): return redirect(url_for('login'))
+    pid=int(safe_number(request.form.get('product_id'),0,minimum=1)); produced=safe_number(request.form.get('produced_qty'),0,minimum=0.001); waste=safe_number(request.form.get('waste_qty'),0,minimum=0)
+    code=(request.form.get('batch_code') or '').strip(); pdate=request.form.get('produced_date') or datetime.now().strftime('%Y-%m-%d'); expiry=request.form.get('expiry_date') or ''; note=(request.form.get('note') or '').strip()
+    if produced<=0: return 'Ishlab chiqarilgan miqdor 0 dan katta bo‘lishi kerak.',400
+    conn=get_db_connection(); ensure_business_plus_schema(conn)
+    try:
+        recipe=conn.execute('SELECT * FROM production_recipes WHERE product_id=?',(pid,)).fetchone()
+        product=conn.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
+        if not recipe or not product: conn.close(); return 'Bu mahsulot uchun retsept topilmadi. Avval retsept yarating.',400
+        lines=conn.execute('''SELECT i.material_id,i.qty,m.name,m.unit,m.stock,m.avg_cost
+            FROM production_recipe_items i JOIN raw_materials m ON m.id=i.material_id WHERE i.recipe_id=?''',(recipe['id'],)).fetchall()
+        if not lines: conn.close(); return 'Retseptda xomashyo ko‘rsatilmagan.',400
+        # Brak ham retsept bo‘yicha sarflangan xomashyoga kiradi; yaxshi chiqqan mahsulotgina tayyor omborga qo‘shiladi.
+        process_qty=produced+waste
+        scale=process_qty/safe_number(recipe['output_qty'])
+        needed=[(x, safe_number(x['qty'])*scale) for x in lines]
+        shortage=[f"{x['name']}: kerak {q:.3f} {x['unit']}, bor {safe_number(x['stock']):.3f}" for x,q in needed if safe_number(x['stock'])+1e-9<q]
+        if shortage:
+            conn.close(); return 'Xomashyo yetarli emas:<br>'+'<br>'.join(shortage)+'<br><a href="/business_plus?section=production">Orqaga</a>',400
+        raw_cost=sum(q*safe_number(x['avg_cost']) for x,q in needed)
+        labor=safe_number(recipe['labor_cost'])*scale; overhead=safe_number(recipe['overhead_cost'])*scale
+        total=raw_cost+labor+overhead; unit_cost=total/produced if produced else 0
+        stamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for x,q in needed:
+            conn.execute('UPDATE raw_materials SET stock=stock-? WHERE id=?',(q,x['material_id']))
+            conn.execute('INSERT INTO raw_material_movements(material_id,qty_change,unit_cost,total_cost,reason,reference,date,actor) VALUES(?,?,?,?,?,?,?,?)',
+                (x['material_id'],-q,safe_number(x['avg_cost']),q*safe_number(x['avg_cost']),'Ishlab chiqarishga sarf',code or product['name'],stamp,current_actor()))
+        conn.execute('UPDATE products SET stock=COALESCE(stock,0)+?,cost_price=? WHERE id=?',(produced,unit_cost,pid))
+        cur=conn.execute('''INSERT INTO production_batches(product_id,product_name,recipe_id,planned_qty,produced_qty,output_unit,waste_qty,raw_material_cost,labor_cost,overhead_cost,total_cost,unit_cost,batch_code,produced_date,expiry_date,note,actor,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(pid,product['name'],recipe['id'],process_qty,produced,recipe['output_unit'],waste,raw_cost,labor,overhead,total,unit_cost,code,pdate,expiry,note,current_actor(),stamp))
+        batch_id=cur.lastrowid
+        conn.execute('INSERT INTO stock_batches(product_name,batch_code,qty,produced_date,expiry_date,unit_cost,created_at,actor) VALUES(?,?,?,?,?,?,?,?)',(product['name'],code,produced,pdate,expiry,unit_cost,stamp,current_actor()))
+        record_stock_movement(conn,product['name'],produced,'Ishlab chiqarish partiyasi',code or str(batch_id))
+        log_audit(conn,'Ishlab chiqarish yakunlandi','production_batch',batch_id,f'{product["name"]}; miqdor={produced} {recipe["output_unit"]}; xomashyo={raw_cost}; mehnat={labor}; qo‘shimcha={overhead}; jami={total}; birlik tannarxi={unit_cost}; brak={waste}')
+        conn.commit()
+    except Exception as exc:
+        conn.rollback(); conn.close(); app.logger.exception('Ishlab chiqarish partiyasini saqlashda xato'); return f'Ishlab chiqarish saqlanmadi: {exc}',400
+    conn.close(); return redirect(url_for('business_plus',section='production'))
 
 @app.route('/business_plus/gps_visit',methods=['POST'])
 def business_plus_gps_visit():
